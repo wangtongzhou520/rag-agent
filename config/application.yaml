@@ -1,0 +1,70 @@
+# Ragent 单文件配置（本地开发占位；敏感项留空，用 RAGENT_ 前缀环境变量覆盖，嵌套用 __）
+server:
+  port: 9090
+  root_path: /api/ragent
+
+datasource:
+  host: localhost
+  port: 5432
+  database: ragent
+  username: postgres
+  password: ""
+
+redis:
+  host: localhost
+  port: 6379
+  database: 0
+  password: ""
+  key_prefix: "ragent:"
+
+ai:
+  chat:
+    fast:
+      candidates: []        # e.g. ["openai:gpt-4o-mini"]，api_key/base_url 走环境变量
+      timeout_ms: 5000
+    standard:
+      candidates: []
+      timeout_ms: 30000
+    deep:
+      candidates: []
+      timeout_ms: 120000
+  embedding:
+    candidates: []          # 候选维度须 == rag.default.dimension (1536)，启动期校验
+  rerank:
+    candidates: []
+  selection:
+    failure_threshold: 2
+    open_duration_ms: 30000
+
+rag:
+  default:
+    dimension: 1536
+    top_k: 10
+  recall_budget: 20
+  fusion:
+    rrf_k: 20
+    channel_weights:
+      vector: 1.0
+      keyword: 1.0
+      graph: 0.8
+      web: 0.5
+  rerank_candidate_limit: 40
+  scope:
+    supplement_ratio: 0.25
+  intent:
+    confidence_threshold: 0.6
+  vector:
+    type: pg              # pgvector（Milvus 二期预留）
+  keyword:
+    type: none            # none | es
+  graph:
+    type: none            # none | lightrag
+  engine:
+    type: workflow        # workflow | agent（agent 仅预留）
+  memory:
+    history_keep_turns: 8
+  rate_limit:
+    enabled: true
+
+logging:
+  level: INFO
