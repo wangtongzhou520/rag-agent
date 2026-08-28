@@ -10,10 +10,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from app.framework.chat_types import ChatMessage, ChatRequest
+from app.framework.chat_types import ChatMessage, ChatRequest, ChatRole
 from app.model_runtime.chat.service import LLMService
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.pipeline.event_handler import StreamEventCallback
+from app.rag.retrieval.models import RetrievedChunk
 
 EMPTY_RETRIEVAL_TEXT = "未检索到与问题相关的文档内容。"
 
@@ -87,10 +88,38 @@ class StreamChatPipeline:
     async def _stream_rag_response(
         self, ctx: StreamChatContext, chunks: Sequence[Any], callback: StreamEventCallback
     ) -> None:
-        """⑦ Prompt 组装 + LLM 流式（本期不可达：检索恒空；M2 后接入溯源与编号）。
-
-        TODO(M2/M3)：mergeIntentGroup → sources 编号 → citation 注入 → grounding 暂存。
-        """
-        messages = [*ctx.history, ChatMessage(role="user", content=ctx.question)]
+        """⑦ 来源编号、上下文组装与 LLM 流式。"""
+        typed_chunks = [chunk for chunk in chunks if isinstance(chunk, RetrievedChunk)]
+        sources_by_doc: dict[int, RetrievedChunk] = {}
+        for chunk in typed_chunks:
+            current = sources_by_doc.get(chunk.doc_id)
+            if current is None or chunk.score > current.score:
+                sources_by_doc[chunk.doc_id] = chunk
+        ranked = sorted(
+            sources_by_doc.values(), key=lambda item: (-item.score, item.doc_id)
+        )
+        source_indexes = {
+            chunk.doc_id: index for index, chunk in enumerate(ranked, start=1)
+        }
+        await callback.on_sources(
+            [chunk.to_source(source_indexes[chunk.doc_id]) for chunk in ranked]
+        )
+        context = "\n\n".join(
+            (
+                f'<content ref="{source_indexes[chunk.doc_id]}">'
+                f"\n{chunk.text}\n</content>"
+            )
+            for chunk in typed_chunks
+        )
+        system = (
+            "你是严谨的知识库问答助手。仅依据 <knowledge-context> 中的资料回答；"
+            "资料不足时明确说明。引用事实时在句末使用 [N](#cite-N)，N 必须来自 ref。"
+            f"\n<knowledge-context>\n{context}\n</knowledge-context>"
+        )
+        messages = [
+            ChatMessage(role=ChatRole.SYSTEM, content=system),
+            *ctx.history,
+            ChatMessage(role=ChatRole.USER, content=ctx.question),
+        ]
         request = ChatRequest(messages=messages, thinking=ctx.deep_thinking)
         await self._llm.stream_chat(request, callback)

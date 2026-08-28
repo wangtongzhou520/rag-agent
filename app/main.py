@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 import redis.asyncio as aioredis
@@ -10,6 +11,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+# 导入即注册 t_* 表元数据，供 init_schema 自动建表
+import app.framework.async_task
+import app.knowledge.models
+import app.rag.models
+import app.system.user.models
+from app.core.parser.detector import MimeTypeDetector
+from app.core.parser.registry import build_default_registry
 from app.framework.config import Settings, get_settings
 from app.framework.db import init_schema
 from app.framework.exceptions import BizException
@@ -17,17 +25,17 @@ from app.framework.ids import new_uuid7
 from app.framework.logging import get_logger, init_logging
 from app.framework.result import ErrorCode, Results
 from app.framework.trace_ctx import reset_request_id, set_request_id
+from app.knowledge.router import router as knowledge_router
+from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
-
-# 导入即注册 t_* 表元数据，供 init_schema 自动建表
-import app.framework.async_task  # noqa: F401,E402
-import app.knowledge.models  # noqa: F401,E402
-import app.rag.models  # noqa: F401,E402
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.memory.store import ConversationMemoryStore
-from app.rag.pipeline.stream_chat import EmptyRetrievalEngine, StreamChatPipeline
+from app.rag.pipeline.stream_chat import StreamChatPipeline
+from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.router import router as rag_router
 from app.rag.service import RAGChatService
+from app.system.auth.router import router as auth_router
+from app.system.auth.service import AuthService
 
 logger = get_logger(__name__)
 
@@ -63,15 +71,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ConversationMemoryStore(engine),
         history_keep_turns=settings.rag.memory.history_keep_turns,
     )
-    pipeline = StreamChatPipeline(
-        memory_service, model_runtime.llm, EmptyRetrievalEngine()
+    retrieval = PgVectorRetrievalEngine(
+        engine,
+        model_runtime.embedding,
+        top_k=settings.rag.default.top_k,
     )
+    pipeline = StreamChatPipeline(memory_service, model_runtime.llm, retrieval)
 
     app.state.engine = engine
     app.state.redis = redis_client
     app.state.http = http_client
     app.state.model_runtime = model_runtime
+    app.state.auth_service = AuthService(
+        engine, redis_client, settings.auth, settings.redis
+    )
     app.state.rag_chat_service = RAGChatService(memory_service, pipeline, settings)
+    app.state.knowledge_service = KnowledgeService(
+        engine,
+        MimeTypeDetector(),
+        build_default_registry(),
+        model_runtime.embedding,
+        http_client,
+        Path(settings.storage.local_dir),
+    )
     logger.info("app started", root_path=settings.server.root_path)
 
     try:
@@ -122,6 +144,8 @@ def create_app() -> FastAPI:
         return Results.success({"status": "UP"}).model_dump(by_alias=True)
 
     app.include_router(rag_router)
+    app.include_router(auth_router)
+    app.include_router(knowledge_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 

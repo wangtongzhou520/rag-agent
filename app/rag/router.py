@@ -5,23 +5,22 @@ from collections.abc import AsyncIterator
 from contextlib import suppress
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.framework.exceptions import ClientException
 from app.framework.ids import new_uuid7
 from app.framework.sse import SseSender
 from app.rag.service import RAGChatService
+from app.system.auth.deps import require_user
+from app.system.auth.models import LoginUser
 
 router = APIRouter(prefix="/rag/v3", tags=["rag"])
-
-# TODO(认证)：接入 docs/00 §7 的 JWT 认证后替换为真实用户 ID
-_PLACEHOLDER_USER_ID = 0
-
 
 @router.get("/chat", response_class=StreamingResponse)
 async def stream_chat(
     request: Request,
+    user: Annotated[LoginUser, Depends(require_user)],
     question: Annotated[str, Query(min_length=1, max_length=4000)],
     conversation_id: Annotated[str | None, Query(alias="conversationId")] = None,
     deep_thinking: Annotated[bool, Query(alias="deepThinking")] = False,
@@ -39,7 +38,7 @@ async def stream_chat(
             question=normalized_question,
             conversation_id=conversation_id,
             deep_thinking=deep_thinking,
-            user_id=_PLACEHOLDER_USER_ID,
+            user_id=user.user_id,
             sender=sender,
         ),
         name=f"stream-chat:{task_id}",

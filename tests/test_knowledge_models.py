@@ -39,6 +39,9 @@ def test_knowledge_vector_partition_and_embedding() -> None:
     assert getattr(embedding_type, "dim", None) == 1536
     index_cols = {tuple(c.name for c in idx.columns) for idx in table.indexes}
     assert ("collection_name",) in index_cols
+    hnsw = next(idx for idx in table.indexes if idx.name == "idx_kv_embedding_hnsw")
+    assert hnsw.dialect_options["postgresql"]["using"] == "hnsw"
+    assert hnsw.dialect_options["postgresql"]["ops"]["embedding"] == "vector_cosine_ops"
 
 
 def test_chunk_uuid_pk_and_embedding_text() -> None:

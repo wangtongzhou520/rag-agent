@@ -6,17 +6,24 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.framework.chat_types import ChatMessage, ChatRole
-from app.rag.models import Conversation, Message
+from app.rag.models import Conversation, ConversationSummary, Message
+from app.rag.source.citation import strip_citations
 
 
 def normalize_history(
     messages: list[ChatMessage], keep_turns: int
 ) -> list[ChatMessage]:
-    """历史归一化：只留 user/assistant，裁剪头部 assistant，保留最近 keep_turns 轮。
-
-    TODO(M3)：assistant 历史内容须 CitationMarkup.strip 去掉行内引用角标（docs/01 §2.2）。
-    """
-    items = [m for m in messages if m.role in (ChatRole.USER, ChatRole.ASSISTANT)]
+    """只留 user/assistant，去引用角标并保留最近 keep_turns 轮。"""
+    items = [
+        ChatMessage(
+            role=m.role,
+            content=strip_citations(m.content)
+            if m.role is ChatRole.ASSISTANT
+            else m.content,
+        )
+        for m in messages
+        if m.role in (ChatRole.USER, ChatRole.ASSISTANT)
+    ]
     while items and items[0].role is ChatRole.ASSISTANT:
         items.pop(0)
     if keep_turns > 0:
@@ -66,6 +73,21 @@ class ConversationMemoryStore:
             ).all()
         history = [ChatMessage(role=ChatRole(row.role), content=row.content) for row in rows]
         return normalize_history(history, keep_turns)
+
+    async def load_summary(
+        self, conversation_id: uuid.UUID, user_id: int
+    ) -> str | None:
+        async with self._session_factory() as session:
+            return await session.scalar(
+                select(ConversationSummary.content)
+                .where(
+                    ConversationSummary.conversation_id == conversation_id,
+                    ConversationSummary.user_id == user_id,
+                    ConversationSummary.deleted == 0,
+                )
+                .order_by(ConversationSummary.update_time.desc())
+                .limit(1)
+            )
 
     async def append_message(
         self,

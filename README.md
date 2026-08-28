@@ -4,7 +4,7 @@ Ragent AI 是面向 Agentic RAG 的 Python 应用平台，覆盖从文档入库�
 
 - **功能覆盖**：混合检索（向量 + ES 关键词 + LightRAG 图谱 + 联网搜索）、问题理解（术语映射 / 改写拆分 / 意图树 / 多库路由）、模型档位与熔断降级、会话记忆、公平排队限流、可编排入库 Pipeline、MCP 工具、RAG Trace、管理后台。
 - **前端契约稳定**：保持现有 React 前端依赖的 REST 路径、`Result<T>` 包装和 SSE 六事件协议，支持零改动对接。
-- **独立数据模型**：项目维护自己的 PostgreSQL Schema 与 Alembic 迁移，不要求复用其他实现的表结构或运行状态。
+- **独立数据模型**：全新项目启动时初始化自己的 PostgreSQL Schema，不复用其他实现的表结构、数据或迁移历史。
 
 ## 技术栈
 
@@ -30,11 +30,10 @@ uv sync                                        # 安装依赖（虚拟环境由 
 uv run uvicorn app.main:app --port 9090        # 启动 API 服务（root_path=/api/ragent）
 uv run python -m app.worker                    # 启动 PG 队列 worker（M2 起有实质逻辑）
 uv run python -m mcp_server.main               # 启动 MCP 工具服务（:9099）
-uv run alembic upgrade head                    # 应用数据库迁移（离线生成 SQL 加 --sql）
 uv run pytest -q                               # 测试
 uv run ruff check app mcp_server               # Lint
 ```
 
 ## 实施顺序
 
-按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。当前进度：M1 工程骨架、SSE 六事件协议、模型候选选择与三态熔断、chat 调用链（provider HTTP 客户端 / 首包探测 / 候选容错）、会话记忆与七步编排管线骨架、`/rag/v3/chat` 真实链路接线已落地；M2 进行中——知识域六表 ORM 与迁移（含 pgvector HNSW、`t_async_task` 队列）、embedding 运行时（路由 + OpenAI 兼容客户端 + 指定模型不降级）已就绪，入库内核（解析/分块/落库）、PG 队列 worker 与知识库 CRUD 待实现；认证、pgvector 检索接入、摘要、改写/意图仍待实现。
+按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。当前进度：M1/M2 核心代码已落地——JWT + Redis 会话认证（默认关闭，待配置启用）、SSE 六事件协议、模型候选容错、会话记忆与摘要装饰、pgvector 单通道检索、来源引用、固定五步入库内核、本地解析与分块、知识库/文档/chunk CRUD、HNSW 初始化及 PG 队列 worker。数据库、Redis 和模型供应商配置完成后需做真实环境联调；M3 的改写/意图树与混合检索尚未实现。

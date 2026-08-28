@@ -4,6 +4,7 @@ import asyncio
 import re
 
 import pytest
+from uuid_utils import uuid7
 
 from app.framework.chat_types import ChatMessage, ChatRole
 from app.framework.sse import SseSender
@@ -15,6 +16,7 @@ from app.rag.pipeline.stream_chat import (
     StreamChatContext,
     StreamChatPipeline,
 )
+from app.rag.retrieval.models import RetrievedChunk
 
 
 class FakeMemory:
@@ -122,7 +124,17 @@ async def test_history_loaded_before_question_persisted() -> None:
 async def test_rag_response_streams_llm_and_persists_normal() -> None:
     class NonEmptyRetrieval:
         async def retrieve(self, question: str):
-            return [{"text": "命中片段"}]
+            return [
+                RetrievedChunk(
+                    id=uuid7(),
+                    text="命中片段",
+                    score=0.9,
+                    doc_id=7,
+                    doc_name="理赔条款",
+                    source_type="file",
+                    file_type="pdf",
+                )
+            ]
 
     memory = FakeMemory()
     llm = FakeLLM(chunks=["按条款", "赔付"])
@@ -137,6 +149,8 @@ async def test_rag_response_streams_llm_and_persists_normal() -> None:
     request = llm.requests[0]
     assert request.thinking is True
     assert request.messages[-1].content == "保险怎么赔"
+    assert '<content ref="1">' in request.messages[0].content
+    assert '"docName":"理赔条款"' in body
     assert memory.appended[-1][1] == "按条款赔付"
     assert memory.appended[-1][2] == "NORMAL"
 
@@ -173,3 +187,11 @@ def test_normalize_history_crops_head_assistant_and_keeps_recent_turns() -> None
 
     full = normalize_history(messages, keep_turns=10)
     assert [m.content for m in full] == ["q1", "a1", "q2", "a2"]
+
+
+def test_normalize_history_strips_assistant_citations() -> None:
+    messages = [
+        ChatMessage(role=ChatRole.USER, content="q"),
+        ChatMessage(role=ChatRole.ASSISTANT, content="答案[1](#cite-1)"),
+    ]
+    assert normalize_history(messages, 8)[1].content == "答案"

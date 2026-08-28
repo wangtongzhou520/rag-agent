@@ -17,6 +17,18 @@ redis:
   password: ""
   key_prefix: "ragent:"
 
+# 数据库和 Redis 配置完成后再启用；jwt_secret 请通过环境变量注入：
+# RAGENT_AUTH__JWT_SECRET=...
+auth:
+  enabled: false
+  jwt_secret: ""
+  token_ttl_seconds: 2592000
+  header_name: Authorization
+  development_user_id: 0
+
+storage:
+  local_dir: resources/uploads
+
 ai:
   # provider 连接配置；api_key 留空，用环境变量覆盖，例如：
   #   RAGENT_AI__PROVIDERS__BAILIAN__API_KEY=sk-...

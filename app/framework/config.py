@@ -47,6 +47,21 @@ class RedisSettings(BaseModel):
     key_prefix: str = "ragent:"
 
 
+class AuthSettings(BaseModel):
+    """JWT + Redis 会话认证；未配置数据库阶段可保持 disabled。"""
+
+    enabled: bool = False
+    jwt_secret: str = ""
+    token_ttl_seconds: int = 2_592_000
+    header_name: str = "Authorization"
+    default_avatar: str = ""
+    development_user_id: int = 0
+
+
+class StorageSettings(BaseModel):
+    local_dir: str = "resources/uploads"
+
+
 class ProviderSettings(BaseModel):
     """单个模型 provider 的连接配置；api_key 留空，用 RAGENT_ 前缀环境变量覆盖。"""
 
@@ -213,6 +228,8 @@ class Settings(BaseSettings):
     server: ServerSettings = ServerSettings()
     datasource: DatasourceSettings = DatasourceSettings()
     redis: RedisSettings = RedisSettings()
+    auth: AuthSettings = AuthSettings()
+    storage: StorageSettings = StorageSettings()
     ai: AiSettings = AiSettings()
     rag: RagSettings = RagSettings()
     logging: LoggingSettings = LoggingSettings()

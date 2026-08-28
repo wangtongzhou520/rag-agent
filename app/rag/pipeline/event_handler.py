@@ -12,6 +12,7 @@ from app.framework.sse import (
     CompletionPayload,
     MessageDeltaType,
     MessageStatus,
+    SourceRef,
     SseEventType,
     SseSender,
 )
@@ -26,6 +27,7 @@ class StreamEventCallback(StreamCallback, Protocol):
 
     async def on_reply_to_message_id(self, message_id: str | None) -> None: ...
     async def on_cancelled(self) -> None: ...
+    async def on_sources(self, sources: list[SourceRef]) -> None: ...
 
 
 class StreamChatEventHandler:
@@ -51,6 +53,7 @@ class StreamChatEventHandler:
         self._thinkings: list[str] = []
         self._thinking_start: float | None = None
         self._reply_to_message_id: str | None = None
+        self._sources: list[SourceRef] = []
 
     async def on_content(self, content: str) -> None:
         self._contents.append(content)
@@ -67,6 +70,9 @@ class StreamChatEventHandler:
     async def on_reply_to_message_id(self, message_id: str | None) -> None:
         self._reply_to_message_id = message_id
 
+    async def on_sources(self, sources: list[SourceRef]) -> None:
+        self._sources = list(sources)
+
     async def on_complete(self) -> None:
         """正常完成：assistant 消息 NORMAL 落库，发 finish + done。"""
         message_id = await self._persist(MessageStatus.NORMAL)
@@ -75,6 +81,7 @@ class StreamChatEventHandler:
             CompletionPayload(
                 message_id=message_id,
                 title="新对话" if self._is_new_conversation else None,
+                sources=self._sources or None,
                 message_status=MessageStatus.NORMAL,
             ),
         )
@@ -101,6 +108,11 @@ class StreamChatEventHandler:
             "".join(self._contents),
             thinking_content="".join(self._thinkings) or None,
             thinking_duration=self._thinking_duration(),
+            sources=[
+                source.model_dump(by_alias=True, exclude_none=True)
+                for source in self._sources
+            ]
+            or None,
             message_status=str(status),
             reply_to_message_id=self._reply_to_message_id,
         )

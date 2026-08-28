@@ -96,10 +96,18 @@ class KnowledgeChunk(AuditMixin, Base):
 
 
 class KnowledgeVector(Base):
-    """t_knowledge_vector：pgvector 向量表（HNSW + vector_cosine_ops，见迁移 0002）。"""
+    """t_knowledge_vector：pgvector 向量表（HNSW + vector_cosine_ops）。"""
 
     __tablename__ = "t_knowledge_vector"
-    __table_args__ = (Index("idx_kv_collection_name", "collection_name"),)
+    __table_args__ = (
+        Index("idx_kv_collection_name", "collection_name"),
+        Index(
+            "idx_kv_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     collection_name: Mapped[str] = mapped_column(String(64), nullable=False)

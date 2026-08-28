@@ -1,8 +1,6 @@
-"""会话记忆服务：加载降级为空、追加失败不阻断（docs/01 §13 异常与降级）。
+"""会话记忆服务：历史与摘要独立降级，追加失败不阻断。"""
 
-TODO(M1 后续增量)：摘要并行加载与 attachSummary（docs/01 §6/§7）。
-"""
-
+import asyncio
 import uuid
 
 from app.framework.chat_types import ChatMessage, ChatRole
@@ -20,18 +18,38 @@ class ConversationMemoryService:
         self._history_keep_turns = history_keep_turns
 
     async def load(self, conversation_id: str, user_id: int) -> list[ChatMessage]:
-        """加载历史（不含本次问题）；任何异常降级为空历史。"""
+        """并行加载历史与摘要；历史为空时不单独返回摘要。"""
         try:
             conv_id = uuid.UUID(conversation_id)
             await self._store.get_or_create_conversation(conv_id, user_id)
-            return await self._store.load_history(
-                conv_id, user_id, self._history_keep_turns
+            history_result, summary_result = await asyncio.gather(
+                self._store.load_history(
+                    conv_id, user_id, self._history_keep_turns
+                ),
+                self._store.load_summary(conv_id, user_id),
+                return_exceptions=True,
             )
+            history = history_result if isinstance(history_result, list) else []
+            summary = summary_result if isinstance(summary_result, str) else None
+            return self.attach_summary(history, summary)
         except Exception:
             logger.exception(
                 "记忆加载失败，降级为空历史", conversation_id=conversation_id
             )
             return []
+
+    @staticmethod
+    def attach_summary(
+        history: list[ChatMessage], summary: str | None
+    ) -> list[ChatMessage]:
+        if not history or not summary or not summary.strip():
+            return history
+        wrapped = (
+            "<conversation-summary>\n"
+            f"{summary.strip()}\n"
+            "</conversation-summary>"
+        )
+        return [ChatMessage(role=ChatRole.SYSTEM, content=wrapped), *history]
 
     async def append_user_message(
         self, conversation_id: str, user_id: int, content: str

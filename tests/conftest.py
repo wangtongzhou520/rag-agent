@@ -1,4 +1,7 @@
+import os
 from collections.abc import AsyncIterator
+
+os.environ.setdefault("RAGENT_DATASOURCE__AUTO_DDL", "false")
 
 import pytest
 from asgi_lifespan import LifespanManager

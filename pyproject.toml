@@ -12,7 +12,6 @@ dependencies = [
     "PyYAML",
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg",
-    "alembic",
     "pgvector",
     "redis>=5",
     "httpx",
@@ -27,6 +26,8 @@ dependencies = [
     "markdown-it-py",
     "chardet",
     "beautifulsoup4",
+    "pypdf",
+    "python-multipart",
 ]
 
 [dependency-groups]
