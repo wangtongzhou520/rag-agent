@@ -30,10 +30,11 @@ uv sync                                        # 安装依赖（虚拟环境由 
 uv run uvicorn app.main:app --port 9090        # 启动 API 服务（root_path=/api/ragent）
 uv run python -m app.worker                    # 启动 PG 队列 worker（M2 起有实质逻辑）
 uv run python -m mcp_server.main               # 启动 MCP 工具服务（:9099）
+uv run alembic upgrade head                    # 应用数据库迁移（离线生成 SQL 加 --sql）
 uv run pytest -q                               # 测试
 uv run ruff check app mcp_server               # Lint
 ```
 
 ## 实施顺序
 
-按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。当前进度：M1 工程骨架已初始化。
+按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。当前进度：M1 工程骨架、SSE 六事件协议、模型候选选择与三态熔断、chat 调用链（provider HTTP 客户端 / 首包探测 / 候选容错）、会话记忆与七步编排管线骨架、`/rag/v3/chat` 真实链路接线已落地；M2 进行中——知识域六表 ORM 与迁移（含 pgvector HNSW、`t_async_task` 队列）、embedding 运行时（路由 + OpenAI 兼容客户端 + 指定模型不降级）已就绪，入库内核（解析/分块/落库）、PG 队列 worker 与知识库 CRUD 待实现；认证、pgvector 检索接入、摘要、改写/意图仍待实现。

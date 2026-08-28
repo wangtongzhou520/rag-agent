@@ -1,0 +1,65 @@
+"""RAG 对外路由；/rag/v3/chat 为 SSE 协议薄壳，编排委托 RAGChatService。"""
+
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import suppress
+from typing import Annotated
+
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import StreamingResponse
+
+from app.framework.exceptions import ClientException
+from app.framework.ids import new_uuid7
+from app.framework.sse import SseSender
+from app.rag.service import RAGChatService
+
+router = APIRouter(prefix="/rag/v3", tags=["rag"])
+
+# TODO(认证)：接入 docs/00 §7 的 JWT 认证后替换为真实用户 ID
+_PLACEHOLDER_USER_ID = 0
+
+
+@router.get("/chat", response_class=StreamingResponse)
+async def stream_chat(
+    request: Request,
+    question: Annotated[str, Query(min_length=1, max_length=4000)],
+    conversation_id: Annotated[str | None, Query(alias="conversationId")] = None,
+    deep_thinking: Annotated[bool, Query(alias="deepThinking")] = False,
+) -> StreamingResponse:
+    """流式问答入口：构造 SseSender 并委托 RAGChatService，协议契约不变。"""
+    normalized_question = question.strip()
+    if not normalized_question:
+        raise ClientException("问题不能为空")
+
+    sender = SseSender()
+    service: RAGChatService = request.app.state.rag_chat_service
+    task_id = new_uuid7()
+    producer = asyncio.create_task(
+        service.stream_chat(
+            question=normalized_question,
+            conversation_id=conversation_id,
+            deep_thinking=deep_thinking,
+            user_id=_PLACEHOLDER_USER_ID,
+            sender=sender,
+        ),
+        name=f"stream-chat:{task_id}",
+    )
+
+    async def body() -> AsyncIterator[str]:
+        try:
+            async for frame in sender.stream():
+                yield frame
+        finally:
+            if not producer.done():
+                producer.cancel()
+            with suppress(asyncio.CancelledError):
+                await producer
+
+    return StreamingResponse(
+        body(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

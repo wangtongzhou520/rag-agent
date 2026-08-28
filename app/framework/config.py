@@ -28,6 +28,8 @@ class DatasourceSettings(BaseModel):
     database: str = "ragent"
     username: str = "postgres"
     password: str = ""
+    # 新项目起步：启动时自动 CREATE EXTENSION + create_all；测试环境置 false
+    auto_ddl: bool = True
 
     @property
     def url(self) -> str:
@@ -45,15 +47,75 @@ class RedisSettings(BaseModel):
     key_prefix: str = "ragent:"
 
 
+class ProviderSettings(BaseModel):
+    """单个模型 provider 的连接配置；api_key 留空，用 RAGENT_ 前缀环境变量覆盖。"""
+
+    url: str = ""
+    api_key: str = ""
+    endpoints: dict[str, str] = {}  # capability（小写）-> 路径
+
+
+class OllamaProviderSettings(ProviderSettings):
+    url: str = "http://localhost:11434"
+
+
+class AiProvidersSettings(BaseModel):
+    """四个 provider 均为可选配置块，缺省即未配置（候选构建时跳过）。"""
+
+    ollama: OllamaProviderSettings = OllamaProviderSettings()
+    bailian: ProviderSettings = ProviderSettings()
+    siliconflow: ProviderSettings = ProviderSettings()
+    aihubmix: ProviderSettings = ProviderSettings()
+
+
+class ChatCandidateSettings(BaseModel):
+    """chat 物理模型注册表项；id 缺省回退 provider::model。"""
+
+    provider: str
+    model: str
+    id: str | None = None
+    url: str | None = None  # 覆盖 provider 拼接
+    supports_thinking: bool = False
+    enabled: bool = True
+    priority: int = 100
+    dimension: int | None = None
+
+    @property
+    def resolved_id(self) -> str:
+        return self.id or f"{self.provider}::{self.model}"
+
+
 class ChatTierSettings(BaseModel):
     candidates: list[str] = []
     timeout_ms: int = 30000
 
 
 class ChatSettings(BaseModel):
+    candidates: list[ChatCandidateSettings] = []  # 物理模型注册表，不决定顺序
     fast: ChatTierSettings = ChatTierSettings(timeout_ms=5000)
     standard: ChatTierSettings = ChatTierSettings(timeout_ms=30000)
     deep: ChatTierSettings = ChatTierSettings(timeout_ms=120000)
+
+
+class EmbeddingCandidateSettings(BaseModel):
+    """embedding 物理模型注册表项；dimension 须等于 rag.default.dimension（启动校验）。"""
+
+    provider: str
+    model: str
+    id: str | None = None
+    url: str | None = None
+    dimension: int | None = None
+    priority: int = 100
+    enabled: bool = True
+
+    @property
+    def resolved_id(self) -> str:
+        return self.id or f"{self.provider}::{self.model}"
+
+
+class EmbeddingSettings(BaseModel):
+    default_model: str | None = None  # 置顶候选 id
+    candidates: list[EmbeddingCandidateSettings] = []
 
 
 class CandidateSettings(BaseModel):
@@ -65,16 +127,23 @@ class SelectionSettings(BaseModel):
     open_duration_ms: int = 30000
 
 
+class AiStreamSettings(BaseModel):
+    message_chunk_size: int = 5
+
+
 class AiSettings(BaseModel):
+    providers: AiProvidersSettings = AiProvidersSettings()
     chat: ChatSettings = ChatSettings()
-    embedding: CandidateSettings = CandidateSettings()
+    embedding: EmbeddingSettings = EmbeddingSettings()
     rerank: CandidateSettings = CandidateSettings()
     selection: SelectionSettings = SelectionSettings()
+    stream: AiStreamSettings = AiStreamSettings()
 
 
 class RagDefaultSettings(BaseModel):
     dimension: int = 1536
     top_k: int = 10
+    sse_timeout_ms: int = 300000
 
 
 class ChannelWeights(BaseModel):

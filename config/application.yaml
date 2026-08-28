@@ -18,28 +18,70 @@ redis:
   key_prefix: "ragent:"
 
 ai:
+  # provider 连接配置；api_key 留空，用环境变量覆盖，例如：
+  #   RAGENT_AI__PROVIDERS__BAILIAN__API_KEY=sk-...
+  providers:
+    ollama:
+      url: http://localhost:11434
+      endpoints:
+        chat: /v1/chat/completions
+        embedding: /v1/embeddings
+    bailian:
+      url: https://dashscope.aliyuncs.com
+      api_key: ""
+      endpoints:
+        chat: /compatible-mode/v1/chat/completions
+        rerank: /api/v1/services/rerank/text-rerank/text-rerank
+    siliconflow:
+      url: https://api.siliconflow.cn
+      api_key: ""
+      endpoints:
+        chat: /v1/chat/completions
+        embedding: /v1/embeddings
+    aihubmix:
+      url: https://aihubmix.com
+      api_key: ""
+      endpoints:
+        chat: /v1/chat/completions
+        embedding: /v1/embeddings
   chat:
+    # 物理模型注册表（id 缺省回退 provider::model），档位 candidates 引用这里的 id，顺序即容错顺序
+    candidates:
+      - { id: qwen-plus,   provider: bailian,     model: qwen-plus-latest }
+      - { id: qwen-flash,  provider: bailian,     model: qwen-flash }
+      - { id: qwen3-local, provider: ollama,      model: "qwen3:8b-fp16" }
+      - { id: qwen3-max,   provider: bailian,     model: qwen3-max, supports_thinking: true }
+      - { id: glm-4.7,     provider: siliconflow, model: Pro/zai-org/GLM-4.7, supports_thinking: true }
+      - { id: gpt-5.4,     provider: aihubmix,    model: gpt-5.4 }
     fast:
-      candidates: []        # e.g. ["openai:gpt-4o-mini"]，api_key/base_url 走环境变量
+      candidates: [qwen-flash, qwen-plus, qwen3-local]
       timeout_ms: 5000
     standard:
-      candidates: []
+      candidates: [qwen3-max, qwen-plus, qwen3-local, gpt-5.4]
       timeout_ms: 30000
     deep:
-      candidates: []
+      candidates: [qwen3-max, glm-4.7]
       timeout_ms: 120000
   embedding:
-    candidates: []          # 候选维度须 == rag.default.dimension (1536)，启动期校验
+    # default_model 置顶，其余按 (priority, id) 排序；候选维度须 == rag.default.dimension (1536)
+    default_model: qwen-emb-8b
+    candidates:
+      - { id: qwen-emb-8b,            provider: siliconflow, model: Qwen/Qwen3-Embedding-8B,       dimension: 1536, priority: 1 }
+      - { id: qwen-emb-local,         provider: ollama,      model: "qwen3-embedding:8b-fp16",     dimension: 1536, priority: 2 }
+      - { id: text-embedding-3-large, provider: aihubmix,    model: text-embedding-3-large,        dimension: 1536, priority: 3 }
   rerank:
     candidates: []
   selection:
     failure_threshold: 2
     open_duration_ms: 30000
+  stream:
+    message_chunk_size: 5
 
 rag:
   default:
     dimension: 1536
     top_k: 10
+    sse_timeout_ms: 300000
   recall_budget: 20
   fusion:
     rrf_k: 20
