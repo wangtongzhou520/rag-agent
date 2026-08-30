@@ -21,9 +21,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-from uuid_utils import uuid7
 
 from app.framework.db import AuditMixin, Base
+from app.framework.ids import new_native_uuid7
 
 VECTOR_DIMENSION = 1536
 
@@ -82,7 +82,9 @@ class KnowledgeChunk(AuditMixin, Base):
     __tablename__ = "t_knowledge_chunk"
     __table_args__ = (Index("idx_doc_id", "doc_id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=new_native_uuid7
+    )
     kb_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     doc_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)

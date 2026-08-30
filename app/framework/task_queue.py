@@ -6,9 +6,9 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-from uuid_utils import uuid7
 
 from app.framework.async_task import AsyncTask
+from app.framework.ids import new_native_uuid7
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +37,7 @@ class TaskQueue:
         max_retries: int = 5,
     ) -> AsyncTask:
         task = AsyncTask(
-            event_id=uuid7(),
+            event_id=new_native_uuid7(),
             task_type=task_type,
             biz_key=biz_key,
             payload=payload,

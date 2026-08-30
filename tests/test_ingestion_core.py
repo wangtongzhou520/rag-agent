@@ -1,5 +1,7 @@
 """M2 固定入库内核的数据库无关测试。"""
 
+from uuid import UUID
+
 from app.core.chunk.models import ChunkBudget
 from app.core.chunk.service import ChunkingService
 from app.core.ingest.kernel import ChunkEmbeddingService, DefaultIngestionKernel
@@ -47,6 +49,8 @@ def test_markdown_parser_and_outline_aware_chunking() -> None:
     assert len(chunks) == 1
     assert chunks[0].content == "正文内容"
     assert chunks[0].embedding_text == "标题\n正文内容"
+    assert type(chunks[0].id) is UUID
+    assert chunks[0].id.version == 7
 
 
 async def test_kernel_runs_all_steps_and_persists() -> None:

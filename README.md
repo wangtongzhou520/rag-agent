@@ -27,13 +27,20 @@ Python 3.12+ / FastAPI / SQLAlchemy 2.0 (async) + asyncpg / pgvector / redis-py 
 
 ```bash
 uv sync                                        # 安装依赖（虚拟环境由 uv 管理）
-uv run uvicorn app.main:app --port 9090        # 启动 API 服务（root_path=/api/ragent）
-uv run python -m app.worker                    # 启动 PG 队列 worker（M2 起有实质逻辑）
+uv run --env-file .env uvicorn app.main:app --port 9090  # 启动 API 服务
+uv run --env-file .env python -m app.worker              # 启动 PG 队列 worker
 uv run python -m mcp_server.main               # 启动 MCP 工具服务（:9099）
 uv run pytest -q                               # 测试
-uv run ruff check app mcp_server               # Lint
+uv run ruff check .                            # Lint
+```
+
+本地 PostgreSQL/pgvector 与 Redis 容器启动后，可运行不调用外部模型的 M1/M2
+集成验收。测试会创建并自动删除随机命名的 PostgreSQL 数据库，不写入开发库：
+
+```bash
+RAGENT_RUN_INTEGRATION=1 uv run --env-file .env pytest -m integration -q
 ```
 
 ## 实施顺序
 
-按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。当前进度：M1/M2 核心代码已落地——JWT + Redis 会话认证（默认关闭，待配置启用）、SSE 六事件协议、模型候选容错、会话记忆与摘要装饰、pgvector 单通道检索、来源引用、固定五步入库内核、本地解析与分块、知识库/文档/chunk CRUD、HNSW 初始化及 PG 队列 worker。数据库、Redis 和模型供应商配置完成后需做真实环境联调；M3 的改写/意图树与混合检索尚未实现。
+按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。当前进度：M1/M2 核心代码已落地——JWT + Redis 会话认证、SSE 六事件协议、模型候选容错、会话记忆与摘要装饰、pgvector 单通道检索、来源引用、固定五步入库内核、本地解析与分块、知识库/文档/chunk CRUD、HNSW 初始化及 PG 队列 worker；并提供隔离的 Docker 集成验收。M3 的改写/意图树与混合检索尚未实现。

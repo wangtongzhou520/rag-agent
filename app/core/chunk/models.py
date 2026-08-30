@@ -3,9 +3,8 @@
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from uuid_utils import uuid7
-
 from app.framework.exceptions import ClientException
+from app.framework.ids import new_native_uuid7
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +32,7 @@ class Chunk:
     chunk_index: int
     outline_path: tuple[str, ...] = ()
     metadata: dict = field(default_factory=dict)
-    id: UUID = field(default_factory=uuid7)
+    id: UUID = field(default_factory=new_native_uuid7)
 
 
 @dataclass(frozen=True, slots=True)

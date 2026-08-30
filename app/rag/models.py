@@ -20,9 +20,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-from uuid_utils import uuid7
 
 from app.framework.db import AuditMixin, Base
+from app.framework.ids import new_native_uuid7
 
 
 class Conversation(AuditMixin, Base):
@@ -49,7 +49,9 @@ class Message(AuditMixin, Base):
         Index("idx_conversation_user_time", "conversation_id", "user_id", "create_time"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=new_native_uuid7
+    )
     conversation_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
