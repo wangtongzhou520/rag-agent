@@ -15,6 +15,7 @@ from app.rag.retrieval.models import (
     SearchContext,
 )
 from app.rag.retrieval.postprocessors import WeightedRrfFusion
+from app.rag.rewrite.models import RewriteResult
 
 
 def chunk(chunk_id: UUID, score: float, doc_id: int) -> RetrievedChunk:
@@ -156,3 +157,33 @@ async def test_vector_channel_passes_recall_budget_to_retriever() -> None:
     assert retriever.call == ("rewritten", 20)
     assert result.channel_type is SearchChannelType.VECTOR
     assert result.chunks == (expected,)
+
+
+async def test_engine_passes_rewritten_question_to_channels() -> None:
+    expected = chunk(uuid4(), 0.8, 11)
+
+    class Rewriter:
+        async def rewrite_with_split(self, question: str) -> RewriteResult:
+            assert question == "原问题"
+            return RewriteResult("归一化问题", ("归一化问题？",))
+
+    class CapturingChannel(FakeChannel):
+        def __init__(self) -> None:
+            super().__init__(SearchChannelType.VECTOR)
+            self.question = ""
+
+        async def search(self, context: SearchContext) -> SearchChannelResult:
+            self.question = context.main_question
+            assert context.sub_questions == ("归一化问题？",)
+            return SearchChannelResult(self.channel_type, self.channel_name, (expected,))
+
+    channel = CapturingChannel()
+    engine = MultiChannelRetrievalEngine(
+        [channel],
+        RetrievalBudget(1, 1, 1),
+        WeightedRrfFusion(candidate_limit=1),
+        rewriter=Rewriter(),
+    )
+
+    assert await engine.retrieve("原问题") == [expected]
+    assert channel.question == "归一化问题"

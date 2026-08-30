@@ -15,6 +15,7 @@ from app.rag.retrieval.postprocessors import (
     DeduplicationPostProcessor,
     WeightedRrfFusion,
 )
+from app.rag.rewrite.models import RewriteResult
 
 logger = get_logger(__name__)
 
@@ -26,6 +27,10 @@ class SearchChannel(Protocol):
     async def search(self, context: SearchContext) -> SearchChannelResult: ...
 
 
+class QueryRewriter(Protocol):
+    async def rewrite_with_split(self, question: str) -> RewriteResult: ...
+
+
 class MultiChannelRetrievalEngine:
     def __init__(
         self,
@@ -34,6 +39,7 @@ class MultiChannelRetrievalEngine:
         fusion: WeightedRrfFusion,
         *,
         timeout_ms: int = 15_000,
+        rewriter: QueryRewriter | None = None,
     ) -> None:
         if timeout_ms <= 0:
             raise ValueError("timeout_ms 必须大于 0")
@@ -42,9 +48,19 @@ class MultiChannelRetrievalEngine:
         self._fusion = fusion
         self._deduplication = DeduplicationPostProcessor()
         self._timeout_seconds = timeout_ms / 1000
+        self._rewriter = rewriter
 
     async def retrieve(self, question: str) -> list[RetrievedChunk]:
-        context = SearchContext(question, question, self._budget)
+        rewritten = question
+        sub_questions: tuple[str, ...] = ()
+        if self._rewriter is not None:
+            try:
+                result = await self._rewriter.rewrite_with_split(question)
+                rewritten = result.rewritten_question or question
+                sub_questions = result.sub_questions
+            except Exception:
+                logger.exception("问题改写失败，使用原问题检索")
+        context = SearchContext(question, rewritten, self._budget, sub_questions)
         results = await asyncio.gather(
             *(self._run_channel(channel, context) for channel in self._channels)
         )

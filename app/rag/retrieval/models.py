@@ -62,6 +62,7 @@ class SearchContext:
     original_question: str
     rewritten_question: str
     budget: RetrievalBudget
+    sub_questions: tuple[str, ...] = ()
 
     @property
     def main_question(self) -> str:
