@@ -6,7 +6,7 @@ server:
 datasource:
   host: localhost
   port: 5432
-  database: ragent
+  database: ragagent
   username: postgres
   password: ""
 
@@ -39,11 +39,11 @@ ai:
         chat: /v1/chat/completions
         embedding: /v1/embeddings
     bailian:
-      url: https://dashscope.aliyuncs.com
+      url: https://ws-95otow917zuyeam7.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
       api_key: ""
       endpoints:
-        chat: /compatible-mode/v1/chat/completions
-        rerank: /api/v1/services/rerank/text-rerank/text-rerank
+        chat: /chat/completions
+        embedding: /embeddings
     siliconflow:
       url: https://api.siliconflow.cn
       api_key: ""
@@ -76,8 +76,9 @@ ai:
       timeout_ms: 120000
   embedding:
     # default_model 置顶，其余按 (priority, id) 排序；候选维度须 == rag.default.dimension (1536)
-    default_model: qwen-emb-8b
+    default_model: qwen3.7-text-embedding
     candidates:
+      - { id: qwen3.7-text-embedding, provider: bailian,     model: qwen3.7-text-embedding,         dimension: 1536, priority: 0 }
       - { id: qwen-emb-8b,            provider: siliconflow, model: Qwen/Qwen3-Embedding-8B,       dimension: 1536, priority: 1 }
       - { id: qwen-emb-local,         provider: ollama,      model: "qwen3-embedding:8b-fp16",     dimension: 1536, priority: 2 }
       - { id: text-embedding-3-large, provider: aihubmix,    model: text-embedding-3-large,        dimension: 1536, priority: 3 }

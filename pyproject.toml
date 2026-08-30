@@ -14,7 +14,7 @@ dependencies = [
     "asyncpg",
     "pgvector",
     "redis>=5",
-    "httpx",
+    "httpx[socks]",
     "PyJWT",
     "structlog",
     "fastmcp>=3,<4",
@@ -53,3 +53,6 @@ line-length = 100
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: requires local PostgreSQL/pgvector and Redis containers",
+]

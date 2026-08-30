@@ -16,6 +16,7 @@ from app.model_runtime.chat.providers import (
 from app.model_runtime.chat.service import RoutingLLMService
 from app.model_runtime.embedding.providers import (
     AIHubMixEmbeddingClient,
+    BaiLianEmbeddingClient,
     OllamaEmbeddingClient,
     SiliconFlowEmbeddingClient,
 )
@@ -38,6 +39,7 @@ _CHAT_CLIENT_CLASSES = {
 }
 
 _EMBEDDING_CLIENT_CLASSES = {
+    ModelProvider.BAILIAN: BaiLianEmbeddingClient,
     ModelProvider.OLLAMA: OllamaEmbeddingClient,
     ModelProvider.SILICONFLOW: SiliconFlowEmbeddingClient,
     ModelProvider.AIHUBMIX: AIHubMixEmbeddingClient,

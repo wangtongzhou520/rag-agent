@@ -4,6 +4,10 @@ from app.model_runtime.embedding.base import AbstractOpenAIStyleEmbeddingClient
 from app.model_runtime.routing import ModelProvider
 
 
+class BaiLianEmbeddingClient(AbstractOpenAIStyleEmbeddingClient):
+    provider = ModelProvider.BAILIAN
+
+
 class SiliconFlowEmbeddingClient(AbstractOpenAIStyleEmbeddingClient):
     provider = ModelProvider.SILICONFLOW
 
