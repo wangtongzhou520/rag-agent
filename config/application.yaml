@@ -103,6 +103,8 @@ rag:
       keyword: 1.0
       graph: 0.8
       web: 0.5
+  retrieval:
+    timeout_ms: 15000
   rerank_candidate_limit: 40
   scope:
     supplement_ratio: 0.25
