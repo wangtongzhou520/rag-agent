@@ -31,7 +31,11 @@ from app.model_runtime.factory import build_model_runtime
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.memory.store import ConversationMemoryStore
 from app.rag.pipeline.stream_chat import StreamChatPipeline
+from app.rag.retrieval.channels import VectorSearchChannel
+from app.rag.retrieval.engine import MultiChannelRetrievalEngine
+from app.rag.retrieval.models import RetrievalBudget, SearchChannelType
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
+from app.rag.retrieval.postprocessors import WeightedRrfFusion
 from app.rag.router import router as rag_router
 from app.rag.service import RAGChatService
 from app.system.auth.router import router as auth_router
@@ -71,10 +75,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ConversationMemoryStore(engine),
         history_keep_turns=settings.rag.memory.history_keep_turns,
     )
-    retrieval = PgVectorRetrievalEngine(
+    vector_retriever = PgVectorRetrievalEngine(
         engine,
         model_runtime.embedding,
-        top_k=settings.rag.default.top_k,
+        top_k=settings.rag.recall_budget,
+    )
+    budget = RetrievalBudget(
+        recall_budget=settings.rag.recall_budget,
+        candidate_limit=settings.rag.rerank_candidate_limit,
+        context_top_k=settings.rag.default.top_k,
+    )
+    weights = settings.rag.fusion.channel_weights
+    retrieval = MultiChannelRetrievalEngine(
+        [VectorSearchChannel(vector_retriever)],
+        budget,
+        WeightedRrfFusion(
+            rrf_k=settings.rag.fusion.rrf_k,
+            candidate_limit=budget.candidate_limit,
+            weights={
+                SearchChannelType.VECTOR: weights.vector,
+                SearchChannelType.KEYWORD: weights.keyword,
+                SearchChannelType.GRAPH: weights.graph,
+                SearchChannelType.WEB: weights.web,
+            },
+        ),
+        timeout_ms=settings.rag.retrieval.timeout_ms,
     )
     pipeline = StreamChatPipeline(memory_service, model_runtime.llm, retrieval)
 

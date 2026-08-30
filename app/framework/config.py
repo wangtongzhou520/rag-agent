@@ -173,6 +173,10 @@ class FusionSettings(BaseModel):
     channel_weights: ChannelWeights = ChannelWeights()
 
 
+class RetrievalSettings(BaseModel):
+    timeout_ms: int = 15000
+
+
 class ScopeSettings(BaseModel):
     supplement_ratio: float = 0.25
 
@@ -201,6 +205,7 @@ class RagSettings(BaseModel):
     default: RagDefaultSettings = RagDefaultSettings()
     recall_budget: int = 20
     fusion: FusionSettings = FusionSettings()
+    retrieval: RetrievalSettings = RetrievalSettings()
     rerank_candidate_limit: int = 40
     scope: ScopeSettings = ScopeSettings()
     intent: IntentSettings = IntentSettings()

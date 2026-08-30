@@ -32,17 +32,22 @@ class PgVectorRetrievalEngine:
         self._embedding = embedding
         self._top_k = max(1, top_k)
 
-    async def retrieve(self, question: str) -> list[RetrievedChunk]:
+    async def retrieve(
+        self, question: str, *, limit: int | None = None
+    ) -> list[RetrievedChunk]:
         try:
+            resolved_limit = max(1, limit or self._top_k)
             groups = await self._collection_groups()
             if not groups:
                 return []
             collected: list[RetrievedChunk] = []
             for model_id, collections in groups.items():
                 vector = await self._embedding.embed(question, model_id=model_id)
-                collected.extend(await self._search(vector, collections))
+                collected.extend(
+                    await self._search(vector, collections, resolved_limit)
+                )
             collected.sort(key=lambda item: (-item.score, item.doc_id, str(item.id)))
-            return collected[: self._top_k]
+            return collected[:resolved_limit]
         except Exception:
             logger.exception("pgvector 检索失败，按空通道降级")
             return []
@@ -63,7 +68,7 @@ class PgVectorRetrievalEngine:
         return dict(grouped)
 
     async def _search(
-        self, query_vector: list[float], collections: list[str]
+        self, query_vector: list[float], collections: list[str], limit: int
     ) -> list[RetrievedChunk]:
         distance = KnowledgeVector.embedding.cosine_distance(query_vector).label(
             "distance"
@@ -81,7 +86,7 @@ class PgVectorRetrievalEngine:
                 KnowledgeDocument.status == "success",
             )
             .order_by(distance)
-            .limit(self._top_k)
+            .limit(limit)
         )
         async with self._sessions() as session:
             rows = (await session.execute(statement)).all()
