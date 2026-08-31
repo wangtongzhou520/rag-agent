@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 # 导入即注册 t_* 表元数据，供 init_schema 自动建表
 import app.framework.async_task
 import app.knowledge.models
+import app.rag.intent.orm
 import app.rag.models
 import app.rag.rewrite.orm
 import app.system.user.models
