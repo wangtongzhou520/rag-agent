@@ -1,12 +1,15 @@
 """查询词映射和无模型规则拆分。"""
 
+import json
 import re
 from collections.abc import Iterable
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from app.framework.chat_types import ChatMessage, ChatRequest, ChatRole
 from app.framework.logging import get_logger
+from app.model_runtime.routing import Tier
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
 from app.rag.rewrite.models import QueryTermMapping, RewriteResult
 from app.rag.rewrite.orm import QueryTermMappingRecord
@@ -266,3 +269,59 @@ class RuleBasedRewriteService:
             part if part.endswith(("?", "？")) else f"{part}？" for part in parts
         ) or (normalized,)
         return RewriteResult(normalized, sub_questions)
+
+
+class ModelRewriteService:
+    """FAST 档模型改写；任何异常或非法输出都回退规则拆分。"""
+
+    _SYSTEM = (
+        "你是检索问题改写器。将用户问题改写为适合知识库检索的完整问题，"
+        "并在确有多个独立问题时拆分。只输出 JSON："
+        '{"rewrite":"...","sub_questions":["..."]}。'
+    )
+
+    def __init__(
+        self,
+        llm,
+        mappings: QueryTermMappingService | None = None,
+        *,
+        enabled: bool = True,
+    ) -> None:
+        self._llm = llm
+        self._rules = RuleBasedRewriteService(mappings)
+        self._enabled = enabled
+
+    async def rewrite_with_split(
+        self, question: str, history: Iterable[object] = ()
+    ) -> RewriteResult:
+        normalized = await self._rules._mappings.normalize_async(question)
+        fallback = await self._rules.rewrite_with_split(normalized)
+        if not self._enabled:
+            return fallback
+        messages = [ChatMessage(role=ChatRole.SYSTEM, content=self._SYSTEM)]
+        history_items = [item for item in history if getattr(item, "role", None) in {ChatRole.USER, ChatRole.ASSISTANT, "user", "assistant"}]
+        for item in history_items[-4:]:
+            messages.append(ChatMessage(role=ChatRole(item.role), content=str(getattr(item, "content", ""))))
+        messages.append(ChatMessage(role=ChatRole.USER, content=normalized))
+        try:
+            raw = await self._llm.chat(
+                ChatRequest(messages=messages, temperature=0.1, top_p=0.3),
+                tier=Tier.FAST,
+            )
+            data = json.loads(self._strip_fence(raw))
+            rewritten = str(data.get("rewrite", "")).strip()
+            if not rewritten:
+                return fallback
+            values = data.get("sub_questions") or [rewritten]
+            sub_questions = tuple(str(value).strip() for value in values if str(value).strip())
+            return RewriteResult(rewritten, sub_questions or (rewritten,))
+        except Exception:
+            logger.exception("模型问题改写失败，使用规则兜底")
+            return fallback
+
+    @staticmethod
+    def _strip_fence(value: str) -> str:
+        text = value.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
+        return text.strip()

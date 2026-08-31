@@ -177,6 +177,11 @@ class RetrievalSettings(BaseModel):
     timeout_ms: int = 15000
 
 
+class QueryRewriteSettings(BaseModel):
+    enabled: bool = True
+    timeout_ms: int = 5000
+
+
 class ScopeSettings(BaseModel):
     supplement_ratio: float = 0.25
 
@@ -206,6 +211,7 @@ class RagSettings(BaseModel):
     recall_budget: int = 20
     fusion: FusionSettings = FusionSettings()
     retrieval: RetrievalSettings = RetrievalSettings()
+    query_rewrite: QueryRewriteSettings = QueryRewriteSettings()
     rerank_candidate_limit: int = 40
     scope: ScopeSettings = ScopeSettings()
     intent: IntentSettings = IntentSettings()

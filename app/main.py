@@ -39,7 +39,7 @@ from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.retrieval.postprocessors import WeightedRrfFusion
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
 from app.rag.rewrite.router import router as rewrite_router
-from app.rag.rewrite.term_mapping import QueryTermMappingService, RuleBasedRewriteService
+from app.rag.rewrite.term_mapping import ModelRewriteService, QueryTermMappingService
 from app.rag.router import router as rag_router
 from app.rag.service import RAGChatService
 from app.system.auth.router import router as auth_router
@@ -108,7 +108,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             },
         ),
         timeout_ms=settings.rag.retrieval.timeout_ms,
-        rewriter=RuleBasedRewriteService(query_mapping_service),
+        rewriter=ModelRewriteService(
+            model_runtime.llm,
+            query_mapping_service,
+            enabled=settings.rag.query_rewrite.enabled,
+        ),
     )
     pipeline = StreamChatPipeline(memory_service, model_runtime.llm, retrieval)
 

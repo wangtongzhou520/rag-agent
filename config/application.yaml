@@ -105,6 +105,9 @@ rag:
       web: 0.5
   retrieval:
     timeout_ms: 15000
+  query_rewrite:
+    enabled: true
+    timeout_ms: 5000
   rerank_candidate_limit: 40
   scope:
     supplement_ratio: 0.25
