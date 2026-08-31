@@ -12,7 +12,7 @@ Python 3.12+ / FastAPI / SQLAlchemy 2.0 (async) + asyncpg / pgvector / redis-py 
 
 ## 前端状态
 
-当前仓库仅包含后端 API、Worker、MCP 服务和设计文档，**尚无前端页面工程**。
+当前仓库仅包含后端 API、Worker、MCP 服务骨架和设计文档，**尚无前端页面工程**。
 登录、聊天、知识库管理、文档处理状态和系统管理页面需要单独建设；现有 REST 与
 SSE 契约用于后续前端直接对接。
 
@@ -49,4 +49,6 @@ RAGENT_RUN_INTEGRATION=1 uv run --env-file .env pytest -m integration -q
 
 ## 实施顺序
 
-按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。当前进度：M1/M2 核心代码已落地——JWT + Redis 会话认证、SSE 六事件协议、模型候选容错、会话记忆与摘要装饰、pgvector 检索、来源引用、固定五步入库内核、本地解析与分块、知识库/文档/chunk CRUD、HNSW 初始化及 PG 队列 worker；并提供隔离的 Docker 集成验收。M3 已完成多通道并行编排、通道超时降级、去重和加权 RRF 骨架；ES/LightRAG/Web 通道、问题改写与意图树仍待实现。
+按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。
+
+当前进度：M1/M2 核心链路已落地并提供隔离的 Docker 集成验收。M3 已完成查询词映射、模型改写、意图树与管理接口、歧义引导、SYSTEM/MCP 分流、多库范围路由、多通道编排、超时降级、去重、加权 RRF、百炼 `qwen3-rerank`、来源引用以及 RAG Trace 记录与查询。当前实际检索通道为 pgvector；ES、LightRAG、WebSearch 仍是按需启用的可选增强项，补充路配额、完整元数据回表富化及意图树批量管理仍待实现。
