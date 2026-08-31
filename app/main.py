@@ -30,6 +30,9 @@ from app.framework.trace_ctx import reset_request_id, set_request_id
 from app.knowledge.router import router as knowledge_router
 from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
+from app.rag.intent.cache import IntentTreeCacheManager
+from app.rag.intent.router import router as intent_router
+from app.rag.intent.service import IntentTreeService
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.memory.store import ConversationMemoryStore
 from app.rag.pipeline.stream_chat import StreamChatPipeline
@@ -134,6 +137,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         Path(settings.storage.local_dir),
     )
     app.state.query_term_mapping_service = query_mapping_service
+    app.state.intent_tree_service = IntentTreeService(
+        engine, IntentTreeCacheManager(redis_client, settings.redis.key_prefix)
+    )
     logger.info("app started", root_path=settings.server.root_path)
 
     try:
@@ -187,6 +193,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(knowledge_router)
     app.include_router(rewrite_router)
+    app.include_router(intent_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 
