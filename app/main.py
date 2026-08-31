@@ -49,7 +49,9 @@ from app.rag.rewrite.router import router as rewrite_router
 from app.rag.rewrite.term_mapping import ModelRewriteService, QueryTermMappingService
 from app.rag.router import router as rag_router
 from app.rag.service import RAGChatService
+from app.rag.trace.query import RagTraceQueryService
 from app.rag.trace.record import RagTraceRecordService
+from app.rag.trace.router import router as trace_router
 from app.system.auth.router import router as auth_router
 from app.system.auth.service import AuthService
 
@@ -167,6 +169,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         Path(settings.storage.local_dir),
     )
     app.state.query_term_mapping_service = query_mapping_service
+    app.state.rag_trace_query_service = RagTraceQueryService(engine)
     app.state.intent_tree_service = IntentTreeService(engine, intent_cache)
     logger.info("app started", root_path=settings.server.root_path)
 
@@ -222,6 +225,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router)
     app.include_router(rewrite_router)
     app.include_router(intent_router)
+    app.include_router(trace_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 
