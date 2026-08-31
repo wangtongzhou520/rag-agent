@@ -14,6 +14,7 @@ from app.framework.chat_types import ChatMessage, ChatRequest, ChatRole
 from app.model_runtime.chat.service import LLMService
 from app.rag.intent.node import SubQuestionIntent
 from app.rag.intent.resolver import IntentResolver
+from app.rag.mcp.service import McpEvidence, McpIntentDispatcher
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.pipeline.event_handler import StreamEventCallback
 from app.rag.retrieval.models import RetrievalScope, RetrievedChunk
@@ -61,11 +62,13 @@ class StreamChatPipeline:
         llm: LLMService,
         retrieval: RetrievalEngine,
         intent_resolver: IntentResolver | None = None,
+        mcp_dispatcher: McpIntentDispatcher | None = None,
     ) -> None:
         self._memory = memory
         self._llm = llm
         self._retrieval = retrieval
         self._intent_resolver = intent_resolver
+        self._mcp_dispatcher = mcp_dispatcher
 
     async def execute(self, ctx: StreamChatContext, callback: StreamEventCallback) -> None:
         try:
@@ -82,6 +85,11 @@ class StreamChatPipeline:
             if IntentResolver.is_system_only(ctx.intents):
                 await self._stream_system_response(ctx, callback)
                 return
+            if self._mcp_dispatcher is not None:
+                evidence = await self._mcp_dispatcher.dispatch(ctx.intents)
+                if evidence:
+                    await self._stream_mcp_response(ctx, evidence, callback)
+                    return
             scope = RetrievalScopeResolver().resolve(ctx.intents)
             if scope.restricted:
                 chunks = await self._retrieval.retrieve(ctx.question, scope=scope)
@@ -154,6 +162,32 @@ class StreamChatPipeline:
             ChatMessage(
                 role=ChatRole.SYSTEM,
                 content="你是友好、简洁的智能助手。直接回答用户，不要编造知识库来源或引用。",
+            ),
+            *ctx.history,
+            ChatMessage(role=ChatRole.USER, content=ctx.question),
+        ]
+        await self._llm.stream_chat(
+            ChatRequest(messages=messages, thinking=ctx.deep_thinking), callback
+        )
+
+    async def _stream_mcp_response(
+        self,
+        ctx: StreamChatContext,
+        evidence: list[McpEvidence],
+        callback: StreamEventCallback,
+    ) -> None:
+        context = "\n\n".join(
+            f'<tool-result tool="{item.tool_id}">\n{item.content}\n</tool-result>'
+            for item in evidence
+        )
+        messages = [
+            ChatMessage(
+                role=ChatRole.SYSTEM,
+                content=(
+                    "依据 <tool-context> 中的实时工具结果回答用户。"
+                    "不得把工具结果标成知识库引用。"
+                    f"\n<tool-context>\n{context}\n</tool-context>"
+                ),
             ),
             *ctx.history,
             ChatMessage(role=ChatRole.USER, content=ctx.question),

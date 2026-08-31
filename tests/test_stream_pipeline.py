@@ -9,6 +9,7 @@ from uuid_utils import uuid7
 from app.framework.chat_types import ChatMessage, ChatRole
 from app.framework.sse import SseSender
 from app.rag.intent.node import IntentKind, IntentNode, NodeScore, SubQuestionIntent
+from app.rag.mcp.service import McpIntentDispatcher
 from app.rag.memory.store import normalize_history
 from app.rag.pipeline.event_handler import StreamChatEventHandler
 from app.rag.pipeline.stream_chat import (
@@ -142,6 +143,45 @@ async def test_system_intent_streams_without_retrieval() -> None:
 
     assert "你好！" in body
     assert "不要编造知识库来源" in llm.requests[0].messages[0].content
+
+
+async def test_mcp_intent_uses_tool_context_without_retrieval() -> None:
+    class McpResolver:
+        async def resolve(self, rewrite_result):
+            node = IntentNode(
+                2,
+                "tool.weather",
+                "天气",
+                2,
+                kind=IntentKind.MCP,
+                mcp_tool_id="weather:query",
+            )
+            return [SubQuestionIntent("北京天气", (NodeScore(node, 0.95),))]
+
+    class Executor:
+        async def call(self, tool_id: str, question: str) -> str:
+            return "北京晴，25℃"
+
+    class MustNotRetrieve:
+        async def retrieve(self, question: str):
+            raise AssertionError("MCP 成功后不应进入 KB 检索")
+
+    llm = FakeLLM(chunks=["今天适合出行"])
+    memory = FakeMemory()
+    pipeline = StreamChatPipeline(
+        memory,
+        llm,
+        MustNotRetrieve(),
+        McpResolver(),
+        McpIntentDispatcher(Executor()),
+    )
+    sender = SseSender()
+    await pipeline.execute(make_ctx(question="北京天气"), make_handler(sender, memory))
+    body = await drain(sender)
+
+    assert "".join(re.findall(r'"delta":"(.*?)"', body)) == "今天适合出行"
+    assert "北京晴，25℃" in llm.requests[0].messages[0].content
+    assert "不得把工具结果标成知识库引用" in llm.requests[0].messages[0].content
 
 
 async def test_rag_response_streams_llm_and_persists_normal() -> None:
