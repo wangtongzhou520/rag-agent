@@ -3,7 +3,7 @@
 import asyncio
 from collections import defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.framework.logging import get_logger
@@ -47,14 +47,15 @@ class PgVectorRetrievalEngine:
             groups = await self._collection_groups()
             if not groups:
                 return []
-            targets = set(collections)
+            requested_targets = set(collections)
             all_collections = {
                 collection for values in groups.values() for collection in values
             }
+            targets = requested_targets & all_collections
             quota = ScopeQuota.split(
                 resolved_limit,
                 supplement_ratio,
-                directed=bool(targets),
+                directed=bool(requested_targets) and bool(targets),
                 has_supplement=bool(all_collections - targets),
             )
             collected: list[RetrievedChunk] = []
@@ -139,6 +140,10 @@ class PgVectorRetrievalEngine:
             .limit(limit)
         )
         async with self._sessions() as session:
+            await session.execute(text("SET LOCAL hnsw.ef_search = 200"))
+            await session.execute(
+                text("SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+            )
             rows = (await session.execute(statement)).all()
         return [
             RetrievedChunk(

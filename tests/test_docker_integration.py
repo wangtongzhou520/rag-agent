@@ -377,3 +377,14 @@ async def test_worker_ingestion_and_pgvector_retrieval(
     assert results[0].doc_id == doc_id
     assert expected in results[0].text
     assert results[0].score == pytest.approx(1.0)
+
+    fallback_results = await PgVectorRetrievalEngine(
+        integration_engine, embedding, top_k=1
+    ).retrieve(
+        question,
+        collections=("missing-collection",),
+        supplement_ratio=0.25,
+    )
+    assert fallback_results
+    assert fallback_results[0].doc_id == doc_id
+    assert expected in fallback_results[0].text
