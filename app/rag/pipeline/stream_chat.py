@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 from app.framework.chat_types import ChatMessage, ChatRequest, ChatRole
 from app.model_runtime.chat.service import LLMService
+from app.rag.intent.guidance import IntentGuidanceService
 from app.rag.intent.node import SubQuestionIntent
 from app.rag.intent.resolver import IntentResolver
 from app.rag.mcp.service import McpEvidence, McpIntentDispatcher
@@ -63,12 +64,14 @@ class StreamChatPipeline:
         retrieval: RetrievalEngine,
         intent_resolver: IntentResolver | None = None,
         mcp_dispatcher: McpIntentDispatcher | None = None,
+        guidance: IntentGuidanceService | None = None,
     ) -> None:
         self._memory = memory
         self._llm = llm
         self._retrieval = retrieval
         self._intent_resolver = intent_resolver
         self._mcp_dispatcher = mcp_dispatcher
+        self._guidance = guidance
 
     async def execute(self, ctx: StreamChatContext, callback: StreamEventCallback) -> None:
         try:
@@ -81,7 +84,13 @@ class StreamChatPipeline:
                     )
                 except Exception:  # noqa: BLE001
                     ctx.intents = []
-            # ④ handle_guidance 待接入；⑤ 纯 SYSTEM 意图不访问知识库
+            # ④ 歧义引导命中后直接返回追问；⑤ 纯 SYSTEM 意图不访问知识库
+            if self._guidance is not None:
+                decision = await self._guidance.detect(ctx.question, ctx.intents)
+                if decision.required:
+                    await callback.on_content(decision.message)
+                    await callback.on_complete()
+                    return
             if IntentResolver.is_system_only(ctx.intents):
                 await self._stream_system_response(ctx, callback)
                 return

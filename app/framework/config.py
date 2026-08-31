@@ -190,6 +190,13 @@ class IntentSettings(BaseModel):
     confidence_threshold: float = 0.6
 
 
+class GuidanceSettings(BaseModel):
+    enabled: bool = True
+    ambiguity_score_ratio: float = 0.8
+    ambiguity_margin: float = 0.15
+    max_options: int = 6
+
+
 class BackendTypeSettings(BaseModel):
     type: str = "none"
 
@@ -215,6 +222,7 @@ class RagSettings(BaseModel):
     rerank_candidate_limit: int = 40
     scope: ScopeSettings = ScopeSettings()
     intent: IntentSettings = IntentSettings()
+    guidance: GuidanceSettings = GuidanceSettings()
     vector: BackendTypeSettings = BackendTypeSettings(type="pg")
     keyword: BackendTypeSettings = BackendTypeSettings()
     graph: BackendTypeSettings = BackendTypeSettings()

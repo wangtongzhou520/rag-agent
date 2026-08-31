@@ -32,6 +32,7 @@ from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
 from app.rag.intent.cache import IntentTreeCacheManager
 from app.rag.intent.classifier import DefaultIntentClassifier
+from app.rag.intent.guidance import IntentGuidanceService
 from app.rag.intent.resolver import IntentResolver
 from app.rag.intent.router import router as intent_router
 from app.rag.intent.service import IntentTreeService
@@ -129,8 +130,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             enabled=settings.rag.query_rewrite.enabled,
         ),
     )
+    guidance_settings = settings.rag.guidance
     pipeline = StreamChatPipeline(
-        memory_service, model_runtime.llm, retrieval, intent_resolver
+        memory_service,
+        model_runtime.llm,
+        retrieval,
+        intent_resolver,
+        guidance=IntentGuidanceService(
+            enabled=guidance_settings.enabled,
+            score_ratio=guidance_settings.ambiguity_score_ratio,
+            margin=guidance_settings.ambiguity_margin,
+            max_options=guidance_settings.max_options,
+        ),
     )
 
     app.state.engine = engine
