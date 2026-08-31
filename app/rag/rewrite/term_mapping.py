@@ -3,7 +3,15 @@
 import re
 from collections.abc import Iterable
 
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+
+from app.framework.logging import get_logger
+from app.rag.rewrite.cache import QueryTermMappingCacheManager
 from app.rag.rewrite.models import QueryTermMapping, RewriteResult
+from app.rag.rewrite.orm import QueryTermMappingRecord
+
+logger = get_logger(__name__)
 
 
 class QueryTermMappingUtil:
@@ -28,19 +36,210 @@ class QueryTermMappingUtil:
 
 
 class QueryTermMappingService:
-    def __init__(self, mappings: Iterable[QueryTermMapping] = ()) -> None:
-        self._mappings = tuple(mappings)
+    def __init__(
+        self,
+        mappings: Iterable[QueryTermMapping] = (),
+        *,
+        engine: AsyncEngine | None = None,
+        cache: QueryTermMappingCacheManager | None = None,
+    ) -> None:
+        self._mappings = tuple(mappings) if engine is None else None
+        self._sessions = (
+            async_sessionmaker(engine, expire_on_commit=False) if engine else None
+        )
+        self._cache = cache
 
     def normalize(self, question: str) -> str:
         normalized = question.strip()
-        for mapping in self._ordered_mappings():
+        for mapping in self._ordered_mappings(self._mappings or ()):
             if mapping.enabled:
                 normalized = QueryTermMappingUtil.apply_mapping(normalized, mapping)
         return normalized
 
-    def _ordered_mappings(self) -> list[QueryTermMapping]:
+    async def normalize_async(self, question: str) -> str:
+        normalized = question.strip()
+        for mapping in self._ordered_mappings(await self.load_mappings()):
+            if mapping.enabled:
+                normalized = QueryTermMappingUtil.apply_mapping(normalized, mapping)
+        return normalized
+
+    async def load_mappings(self) -> list[QueryTermMapping]:
+        if self._sessions is None:
+            return list(self._mappings or ())
+        if self._cache is not None:
+            try:
+                cached = await self._cache.get()
+                if cached is not None:
+                    return cached
+            except Exception:
+                logger.exception("查询词映射缓存读取失败")
+        try:
+            async with self._sessions() as session:
+                rows = (
+                    await session.scalars(
+                        select(QueryTermMappingRecord)
+                        .where(
+                            QueryTermMappingRecord.enabled == 1,
+                            QueryTermMappingRecord.deleted == 0,
+                        )
+                        .order_by(
+                            QueryTermMappingRecord.priority.is_(None).desc(),
+                            QueryTermMappingRecord.priority.desc(),
+                            func.length(QueryTermMappingRecord.source_term).desc(),
+                            QueryTermMappingRecord.id,
+                        )
+                    )
+                ).all()
+            mappings = [self._to_domain(row) for row in rows]
+            if self._cache is not None:
+                try:
+                    await self._cache.put(mappings)
+                except Exception:
+                    logger.exception("查询词映射缓存写入失败")
+            return mappings
+        except Exception:
+            logger.exception("查询词映射加载失败，使用空映射")
+            return []
+
+    async def list_mappings(
+        self, current: int, size: int, keyword: str | None = None
+    ) -> tuple[list[QueryTermMapping], int]:
+        if self._sessions is None:
+            values = list(self._mappings or ())
+            return values, len(values)
+        current = max(1, current)
+        size = min(100, max(1, size))
+        filters = [QueryTermMappingRecord.deleted == 0]
+        if keyword and keyword.strip():
+            term = f"%{keyword.strip()}%"
+            filters.append(
+                (QueryTermMappingRecord.source_term.ilike(term))
+                | (QueryTermMappingRecord.target_term.ilike(term))
+            )
+        async with self._sessions() as session:
+            total = await session.scalar(
+                select(func.count()).select_from(QueryTermMappingRecord).where(*filters)
+            )
+            rows = (
+                await session.scalars(
+                    select(QueryTermMappingRecord)
+                    .where(*filters)
+                    .order_by(QueryTermMappingRecord.id.desc())
+                    .offset((current - 1) * size)
+                    .limit(size)
+                )
+            ).all()
+        return [self._to_domain(row) for row in rows], int(total or 0)
+
+    async def get_mapping(self, mapping_id: int) -> QueryTermMapping:
+        if self._sessions is None:
+            for mapping in self._mappings or ():
+                if mapping.id == mapping_id:
+                    return mapping
+            raise ValueError("查询词映射不存在")
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(QueryTermMappingRecord).where(
+                    QueryTermMappingRecord.id == mapping_id,
+                    QueryTermMappingRecord.deleted == 0,
+                )
+            )
+        if row is None:
+            raise ValueError("查询词映射不存在")
+        return self._to_domain(row)
+
+    async def create_mapping(self, mapping: QueryTermMapping, user_id: int) -> int:
+        self._validate(mapping)
+        if self._sessions is None:
+            raise RuntimeError("查询词映射未配置数据库")
+        async with self._sessions.begin() as session:
+            row = QueryTermMappingRecord(
+                source_term=mapping.source_term.strip(),
+                target_term=mapping.target_term.strip(),
+                match_type=mapping.match_type,
+                priority=mapping.priority,
+                enabled=int(mapping.enabled),
+                domain=mapping.domain,
+                remark=mapping.remark,
+                created_by=user_id,
+            )
+            session.add(row)
+            await session.flush()
+            mapping_id = row.id
+        await self._evict()
+        return int(mapping_id)
+
+    async def update_mapping(
+        self, mapping_id: int, mapping: QueryTermMapping, user_id: int
+    ) -> None:
+        self._validate(mapping)
+        if self._sessions is None:
+            raise RuntimeError("查询词映射未配置数据库")
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(QueryTermMappingRecord).where(
+                    QueryTermMappingRecord.id == mapping_id,
+                    QueryTermMappingRecord.deleted == 0,
+                )
+            )
+            if row is None:
+                raise ValueError("查询词映射不存在")
+            row.source_term = mapping.source_term.strip()
+            row.target_term = mapping.target_term.strip()
+            row.match_type = mapping.match_type
+            row.priority = mapping.priority
+            row.enabled = int(mapping.enabled)
+            row.domain = mapping.domain
+            row.remark = mapping.remark
+            row.updated_by = user_id
+        await self._evict()
+
+    async def delete_mapping(self, mapping_id: int) -> None:
+        if self._sessions is None:
+            raise RuntimeError("查询词映射未配置数据库")
+        async with self._sessions.begin() as session:
+            row = await session.scalar(
+                select(QueryTermMappingRecord).where(
+                    QueryTermMappingRecord.id == mapping_id,
+                    QueryTermMappingRecord.deleted == 0,
+                )
+            )
+            if row is None:
+                raise ValueError("查询词映射不存在")
+            row.deleted = 1
+        await self._evict()
+
+    async def _evict(self) -> None:
+        if self._cache is not None:
+            try:
+                await self._cache.evict()
+            except Exception:
+                logger.exception("查询词映射缓存清理失败")
+
+    @staticmethod
+    def _validate(mapping: QueryTermMapping) -> None:
+        if not mapping.source_term.strip() or not mapping.target_term.strip():
+            raise ValueError("源词和目标词不能为空")
+        if mapping.match_type not in {1, 2, 3, 4}:
+            raise ValueError("match_type 必须在 1 到 4 之间")
+
+    @staticmethod
+    def _to_domain(row: QueryTermMappingRecord) -> QueryTermMapping:
+        return QueryTermMapping(
+            id=row.id,
+            domain=row.domain,
+            source_term=row.source_term,
+            target_term=row.target_term,
+            match_type=row.match_type,
+            priority=row.priority,
+            enabled=bool(row.enabled),
+            remark=row.remark,
+        )
+
+    @staticmethod
+    def _ordered_mappings(mappings: Iterable[QueryTermMapping]) -> list[QueryTermMapping]:
         return sorted(
-            self._mappings,
+            mappings,
             key=lambda item: (
                 item.priority is not None,
                 -(item.priority or 0),
@@ -61,7 +260,7 @@ class RuleBasedRewriteService:
         self, question: str, history: Iterable[object] = ()
     ) -> RewriteResult:
         del history
-        normalized = self._mappings.normalize(question)
+        normalized = await self._mappings.normalize_async(question)
         parts = [part.strip() for part in self._SEPARATOR.split(normalized) if part.strip()]
         sub_questions = tuple(
             part if part.endswith(("?", "？")) else f"{part}？" for part in parts

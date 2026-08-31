@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 import app.framework.async_task
 import app.knowledge.models
 import app.rag.models
+import app.rag.rewrite.orm
 import app.system.user.models
 from app.core.parser.detector import MimeTypeDetector
 from app.core.parser.registry import build_default_registry
@@ -36,7 +37,9 @@ from app.rag.retrieval.engine import MultiChannelRetrievalEngine
 from app.rag.retrieval.models import RetrievalBudget, SearchChannelType
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.retrieval.postprocessors import WeightedRrfFusion
-from app.rag.rewrite.term_mapping import RuleBasedRewriteService
+from app.rag.rewrite.cache import QueryTermMappingCacheManager
+from app.rag.rewrite.router import router as rewrite_router
+from app.rag.rewrite.term_mapping import QueryTermMappingService, RuleBasedRewriteService
 from app.rag.router import router as rag_router
 from app.rag.service import RAGChatService
 from app.system.auth.router import router as auth_router
@@ -87,6 +90,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         context_top_k=settings.rag.default.top_k,
     )
     weights = settings.rag.fusion.channel_weights
+    query_mapping_service = QueryTermMappingService(
+        engine=engine,
+        cache=QueryTermMappingCacheManager(redis_client, settings.redis.key_prefix),
+    )
     retrieval = MultiChannelRetrievalEngine(
         [VectorSearchChannel(vector_retriever)],
         budget,
@@ -101,7 +108,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             },
         ),
         timeout_ms=settings.rag.retrieval.timeout_ms,
-        rewriter=RuleBasedRewriteService(),
+        rewriter=RuleBasedRewriteService(query_mapping_service),
     )
     pipeline = StreamChatPipeline(memory_service, model_runtime.llm, retrieval)
 
@@ -121,6 +128,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         http_client,
         Path(settings.storage.local_dir),
     )
+    app.state.query_term_mapping_service = query_mapping_service
     logger.info("app started", root_path=settings.server.root_path)
 
     try:
@@ -173,6 +181,7 @@ def create_app() -> FastAPI:
     app.include_router(rag_router)
     app.include_router(auth_router)
     app.include_router(knowledge_router)
+    app.include_router(rewrite_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 

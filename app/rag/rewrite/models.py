@@ -10,6 +10,9 @@ class QueryTermMapping:
     match_type: int = 1
     priority: int | None = 100
     enabled: bool = True
+    id: int | None = None
+    domain: str | None = None
+    remark: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

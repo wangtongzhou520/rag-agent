@@ -37,6 +37,9 @@ from app.knowledge.models import (
 )
 from app.knowledge.tasks import KnowledgeTaskHandler
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
+from app.rag.rewrite.cache import QueryTermMappingCacheManager
+from app.rag.rewrite.models import QueryTermMapping
+from app.rag.rewrite.term_mapping import QueryTermMappingService
 from app.system.auth.jwt import decode_token
 from app.system.auth.password import hash_password
 from app.system.auth.router import router as auth_router
@@ -157,6 +160,29 @@ def _pdf_bytes() -> bytes:
 
 async def test_redis_container_is_reachable(redis_client: Redis) -> None:
     assert await redis_client.ping() is True
+
+
+async def test_query_mapping_db_and_cache(
+    integration_engine: AsyncEngine, redis_client: Redis
+) -> None:
+    prefix = f"ragent:integration:mapping:{uuid.uuid4().hex}:"
+    service = QueryTermMappingService(
+        engine=integration_engine,
+        cache=QueryTermMappingCacheManager(redis_client, prefix),
+    )
+    mapping_id = await service.create_mapping(
+        QueryTermMapping("简称", "标准名称", priority=10), user_id=1
+    )
+    records, total = await service.list_mappings(1, 20)
+    assert total == 1 and records[0].id == mapping_id
+    assert await service.normalize_async("请查询简称") == "请查询标准名称"
+    assert await redis_client.exists(f"{prefix}query-term:mappings") == 1
+    await service.update_mapping(
+        mapping_id, QueryTermMapping("简称", "新标准名称", priority=10), user_id=1
+    )
+    assert await service.normalize_async("简称") == "新标准名称"
+    await service.delete_mapping(mapping_id)
+    assert await service.load_mappings() == []
 
 
 async def test_jwt_login_redis_session_and_logout(
