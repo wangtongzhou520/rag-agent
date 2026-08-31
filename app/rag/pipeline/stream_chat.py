@@ -12,9 +12,12 @@ from typing import Any, Protocol
 
 from app.framework.chat_types import ChatMessage, ChatRequest, ChatRole
 from app.model_runtime.chat.service import LLMService
+from app.rag.intent.node import SubQuestionIntent
+from app.rag.intent.resolver import IntentResolver
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.pipeline.event_handler import StreamEventCallback
 from app.rag.retrieval.models import RetrievedChunk
+from app.rag.rewrite.models import RewriteResult
 
 EMPTY_RETRIEVAL_TEXT = "未检索到与问题相关的文档内容。"
 
@@ -43,6 +46,7 @@ class StreamChatContext:
     deep_thinking: bool = False
     is_new_conversation: bool = False
     history: list[ChatMessage] = field(default_factory=list)
+    intents: list[SubQuestionIntent] = field(default_factory=list)
 
 
 class StreamChatPipeline:
@@ -53,15 +57,24 @@ class StreamChatPipeline:
         memory: ConversationMemoryService,
         llm: LLMService,
         retrieval: RetrievalEngine,
+        intent_resolver: IntentResolver | None = None,
     ) -> None:
         self._memory = memory
         self._llm = llm
         self._retrieval = retrieval
+        self._intent_resolver = intent_resolver
 
     async def execute(self, ctx: StreamChatContext, callback: StreamEventCallback) -> None:
         try:
             await self._load_memory(ctx, callback)
-            # ② rewrite_query / ③ resolve_intents：passthrough，待 docs/02 接入
+            # ② rewrite_query 由检索引擎执行；③ 意图分类结果暂存上下文供后续路由使用
+            if self._intent_resolver is not None:
+                try:
+                    ctx.intents = await self._intent_resolver.resolve(
+                        RewriteResult(ctx.question, (ctx.question,))
+                    )
+                except Exception:  # noqa: BLE001
+                    ctx.intents = []
             # ④ handle_guidance / ⑤ handle_system_only：本期不触发
             chunks = await self._retrieval.retrieve(ctx.question)
             if not chunks:

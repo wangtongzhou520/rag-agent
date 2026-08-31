@@ -31,6 +31,8 @@ from app.knowledge.router import router as knowledge_router
 from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
 from app.rag.intent.cache import IntentTreeCacheManager
+from app.rag.intent.classifier import DefaultIntentClassifier
+from app.rag.intent.resolver import IntentResolver
 from app.rag.intent.router import router as intent_router
 from app.rag.intent.service import IntentTreeService
 from app.rag.memory.service import ConversationMemoryService
@@ -98,6 +100,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine=engine,
         cache=QueryTermMappingCacheManager(redis_client, settings.redis.key_prefix),
     )
+    intent_cache = IntentTreeCacheManager(redis_client, settings.redis.key_prefix)
+    intent_resolver = IntentResolver(
+        DefaultIntentClassifier(
+            model_runtime.llm,
+            engine=engine,
+            cache=intent_cache,
+            min_score=settings.rag.intent.confidence_threshold,
+        )
+    )
     retrieval = MultiChannelRetrievalEngine(
         [VectorSearchChannel(vector_retriever)],
         budget,
@@ -118,7 +129,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             enabled=settings.rag.query_rewrite.enabled,
         ),
     )
-    pipeline = StreamChatPipeline(memory_service, model_runtime.llm, retrieval)
+    pipeline = StreamChatPipeline(
+        memory_service, model_runtime.llm, retrieval, intent_resolver
+    )
 
     app.state.engine = engine
     app.state.redis = redis_client
@@ -137,9 +150,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         Path(settings.storage.local_dir),
     )
     app.state.query_term_mapping_service = query_mapping_service
-    app.state.intent_tree_service = IntentTreeService(
-        engine, IntentTreeCacheManager(redis_client, settings.redis.key_prefix)
-    )
+    app.state.intent_tree_service = IntentTreeService(engine, intent_cache)
     logger.info("app started", root_path=settings.server.root_path)
 
     try:
