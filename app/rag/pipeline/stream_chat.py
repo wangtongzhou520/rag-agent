@@ -21,6 +21,8 @@ from app.rag.pipeline.event_handler import StreamEventCallback
 from app.rag.retrieval.models import RetrievalScope, RetrievedChunk
 from app.rag.retrieval.scope import RetrievalScopeResolver
 from app.rag.rewrite.models import RewriteResult
+from app.rag.source.assembler import SourcesAssembler
+from app.rag.source.citation import CitationContextEnricher, sanitize_attribute
 
 EMPTY_RETRIEVAL_TEXT = "未检索到与问题相关的文档内容。"
 
@@ -130,27 +132,17 @@ class StreamChatPipeline:
     ) -> None:
         """⑦ 来源编号、上下文组装与 LLM 流式。"""
         typed_chunks = [chunk for chunk in chunks if isinstance(chunk, RetrievedChunk)]
-        sources_by_doc: dict[int, RetrievedChunk] = {}
-        for chunk in typed_chunks:
-            current = sources_by_doc.get(chunk.doc_id)
-            if current is None or chunk.score > current.score:
-                sources_by_doc[chunk.doc_id] = chunk
-        ranked = sorted(
-            sources_by_doc.values(), key=lambda item: (-item.score, item.doc_id)
-        )
-        source_indexes = {
-            chunk.doc_id: index for index, chunk in enumerate(ranked, start=1)
-        }
-        await callback.on_sources(
-            [chunk.to_source(source_indexes[chunk.doc_id]) for chunk in ranked]
-        )
-        context = "\n\n".join(
+        assembled = SourcesAssembler().assemble(typed_chunks)
+        await callback.on_sources(list(assembled.sources))
+        raw_context = "\n\n".join(
             (
-                f'<content ref="{source_indexes[chunk.doc_id]}">'
+                '<content data-ragent-doc-id="'
+                f'{sanitize_attribute(chunk.doc_id)}">'
                 f"\n{chunk.text}\n</content>"
             )
             for chunk in typed_chunks
         )
+        context = CitationContextEnricher().enrich(raw_context, assembled.indexes)
         system = (
             "你是严谨的知识库问答助手。仅依据 <knowledge-context> 中的资料回答；"
             "资料不足时明确说明。引用事实时在句末使用 [N](#cite-N)，N 必须来自 ref。"
