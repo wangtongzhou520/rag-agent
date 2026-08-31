@@ -16,6 +16,7 @@ from app.rag.retrieval.postprocessors import (
     DeduplicationPostProcessor,
     WeightedRrfFusion,
 )
+from app.rag.retrieval.rerank import Reranker, RerankPostProcessor
 from app.rag.rewrite.models import RewriteResult
 
 logger = get_logger(__name__)
@@ -41,6 +42,8 @@ class MultiChannelRetrievalEngine:
         *,
         timeout_ms: int = 15_000,
         rewriter: QueryRewriter | None = None,
+        reranker: Reranker | None = None,
+        rerank_timeout_ms: int = 10_000,
     ) -> None:
         if timeout_ms <= 0:
             raise ValueError("timeout_ms 必须大于 0")
@@ -50,6 +53,11 @@ class MultiChannelRetrievalEngine:
         self._deduplication = DeduplicationPostProcessor()
         self._timeout_seconds = timeout_ms / 1000
         self._rewriter = rewriter
+        self._rerank = (
+            RerankPostProcessor(reranker, timeout_ms=rerank_timeout_ms)
+            if reranker is not None
+            else None
+        )
 
     async def retrieve(
         self, question: str, *, scope: RetrievalScope | None = None
@@ -71,6 +79,10 @@ class MultiChannelRetrievalEngine:
         )
         deduplicated = self._deduplication.process(results)
         candidates = self._fusion.process(deduplicated)
+        if self._rerank is not None:
+            return await self._rerank.process(
+                context.main_question, candidates, self._budget.context_top_k
+            )
         return candidates[: self._budget.context_top_k]
 
     async def _run_channel(

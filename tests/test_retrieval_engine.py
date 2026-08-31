@@ -208,3 +208,40 @@ async def test_engine_passes_rewritten_question_to_channels() -> None:
 
     assert await engine.retrieve("原问题") == [expected]
     assert channel.question == "归一化问题"
+
+
+async def test_reranker_runs_after_fusion_and_before_context_limit() -> None:
+    first = chunk(uuid4(), 0.9, 1)
+    second = chunk(uuid4(), 0.8, 2)
+
+    class ReverseReranker:
+        async def rerank(self, query, candidates, top_n):
+            assert query == "question"
+            assert candidates == [first, second]
+            assert top_n == 1
+            return list(reversed(candidates))
+
+    engine = MultiChannelRetrievalEngine(
+        [FakeChannel(SearchChannelType.VECTOR, [first, second])],
+        RetrievalBudget(2, 2, 1),
+        WeightedRrfFusion(candidate_limit=2),
+        reranker=ReverseReranker(),
+    )
+    assert await engine.retrieve("question") == [second]
+
+
+async def test_reranker_failure_preserves_fusion_order() -> None:
+    first = chunk(uuid4(), 0.9, 1)
+    second = chunk(uuid4(), 0.8, 2)
+
+    class FailingReranker:
+        async def rerank(self, query, candidates, top_n):
+            raise RuntimeError("rerank offline")
+
+    engine = MultiChannelRetrievalEngine(
+        [FakeChannel(SearchChannelType.VECTOR, [first, second])],
+        RetrievalBudget(2, 2, 1),
+        WeightedRrfFusion(candidate_limit=2),
+        reranker=FailingReranker(),
+    )
+    assert await engine.retrieve("question") == [first]
