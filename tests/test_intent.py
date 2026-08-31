@@ -3,7 +3,7 @@
 from app.rag.intent.classifier import DefaultIntentClassifier
 from app.rag.intent.node import IntentNode, NodeScore, SubQuestionIntent
 from app.rag.intent.resolver import IntentResolver
-from app.rag.retrieval.scope import RetrievalScopeResolver
+from app.rag.retrieval.scope import RetrievalScopeResolver, ScopeQuota
 from app.rag.rewrite.models import RewriteResult
 
 
@@ -61,3 +61,15 @@ def test_scope_resolver_merges_kb_collections_and_top_k() -> None:
     )
     assert scope.collections == ("kb-a", "kb-b", "kb-c")
     assert scope.top_k == 20
+
+
+def test_scope_quota_keeps_primary_and_supplement_budget() -> None:
+    assert ScopeQuota.split(
+        20, 0.25, directed=True, has_supplement=True
+    ) == ScopeQuota(15, 5)
+    assert ScopeQuota.split(
+        1, 0.25, directed=True, has_supplement=True
+    ) == ScopeQuota(1, 0)
+    assert ScopeQuota.split(
+        20, 0.25, directed=False, has_supplement=True
+    ) == ScopeQuota(20, 0)

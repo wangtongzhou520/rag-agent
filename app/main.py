@@ -115,7 +115,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     )
     retrieval = MultiChannelRetrievalEngine(
-        [VectorSearchChannel(vector_retriever)],
+        [
+            VectorSearchChannel(
+                vector_retriever,
+                supplement_ratio=settings.rag.scope.supplement_ratio,
+            )
+        ],
         budget,
         WeightedRrfFusion(
             rrf_k=settings.rag.fusion.rrf_k,

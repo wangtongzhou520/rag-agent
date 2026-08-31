@@ -1,5 +1,6 @@
 """pgvector cosine 单通道检索（M1）。"""
 
+import asyncio
 from collections import defaultdict
 
 from sqlalchemy import select
@@ -14,6 +15,7 @@ from app.knowledge.models import (
 )
 from app.model_runtime.embedding.service import EmbeddingService
 from app.rag.retrieval.models import RetrievedChunk
+from app.rag.retrieval.scope import ScopeQuota
 
 logger = get_logger(__name__)
 
@@ -38,20 +40,59 @@ class PgVectorRetrievalEngine:
         *,
         limit: int | None = None,
         collections: tuple[str, ...] = (),
+        supplement_ratio: float = 0.0,
     ) -> list[RetrievedChunk]:
         try:
             resolved_limit = max(1, limit or self._top_k)
-            groups = await self._collection_groups(collections)
+            groups = await self._collection_groups()
             if not groups:
                 return []
+            targets = set(collections)
+            all_collections = {
+                collection for values in groups.values() for collection in values
+            }
+            quota = ScopeQuota.split(
+                resolved_limit,
+                supplement_ratio,
+                directed=bool(targets),
+                has_supplement=bool(all_collections - targets),
+            )
             collected: list[RetrievedChunk] = []
             for model_id, model_collections in groups.items():
-                vector = await self._embedding.embed(question, model_id=model_id)
-                collected.extend(
-                    await self._search(vector, model_collections, resolved_limit)
+                primary = (
+                    [value for value in model_collections if value in targets]
+                    if targets
+                    else model_collections
                 )
+                supplement = (
+                    [value for value in model_collections if value not in targets]
+                    if targets and quota.supplement
+                    else []
+                )
+                if not primary and not supplement:
+                    continue
+                vector = await self._embedding.embed(question, model_id=model_id)
+                branches = await asyncio.gather(
+                    *(
+                        [self._search(vector, primary, quota.primary)]
+                        if primary and quota.primary
+                        else []
+                    ),
+                    *(
+                        [self._search(vector, supplement, quota.supplement)]
+                        if supplement and quota.supplement
+                        else []
+                    ),
+                    return_exceptions=True,
+                )
+                for branch in branches:
+                    if isinstance(branch, list):
+                        collected.extend(branch)
             collected.sort(key=lambda item: (-item.score, item.doc_id, str(item.id)))
-            return collected[:resolved_limit]
+            unique = {item.key: item for item in collected}
+            return sorted(
+                unique.values(), key=lambda item: (-item.score, item.doc_id, str(item.id))
+            )[:resolved_limit]
         except Exception:
             logger.exception("pgvector 检索失败，按空通道降级")
             return []

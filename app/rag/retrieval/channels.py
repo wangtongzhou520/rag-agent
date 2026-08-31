@@ -18,6 +18,7 @@ class VectorRetriever(Protocol):
         *,
         limit: int | None = None,
         collections: tuple[str, ...] = (),
+        supplement_ratio: float = 0.0,
     ) -> list[RetrievedChunk]: ...
 
 
@@ -25,14 +26,18 @@ class VectorSearchChannel:
     channel_type = SearchChannelType.VECTOR
     channel_name = "pgvector"
 
-    def __init__(self, retriever: VectorRetriever) -> None:
+    def __init__(
+        self, retriever: VectorRetriever, *, supplement_ratio: float = 0.25
+    ) -> None:
         self._retriever = retriever
+        self._supplement_ratio = max(0.0, min(1.0, supplement_ratio))
 
     async def search(self, context: SearchContext) -> SearchChannelResult:
         started = perf_counter()
         options = {"limit": context.scope.top_k or context.budget.recall_budget}
         if context.scope.collections:
             options["collections"] = context.scope.collections
+            options["supplement_ratio"] = self._supplement_ratio
         chunks = await self._retriever.retrieve(context.main_question, **options)
         return SearchChannelResult(
             channel_type=self.channel_type,

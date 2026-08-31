@@ -177,7 +177,11 @@ async def test_vector_channel_passes_intent_scope() -> None:
         scope=RetrievalScope(("kb-a", "kb-b"), 8),
     )
     await VectorSearchChannel(retriever).search(context)
-    assert retriever.options == {"limit": 8, "collections": ("kb-a", "kb-b")}
+    assert retriever.options == {
+        "limit": 8,
+        "collections": ("kb-a", "kb-b"),
+        "supplement_ratio": 0.25,
+    }
 
 
 async def test_engine_passes_rewritten_question_to_channels() -> None:
