@@ -6,6 +6,7 @@ from typing import Protocol
 from app.framework.logging import get_logger
 from app.rag.retrieval.models import (
     RetrievalBudget,
+    RetrievalScope,
     RetrievedChunk,
     SearchChannelResult,
     SearchChannelType,
@@ -50,7 +51,9 @@ class MultiChannelRetrievalEngine:
         self._timeout_seconds = timeout_ms / 1000
         self._rewriter = rewriter
 
-    async def retrieve(self, question: str) -> list[RetrievedChunk]:
+    async def retrieve(
+        self, question: str, *, scope: RetrievalScope | None = None
+    ) -> list[RetrievedChunk]:
         rewritten = question
         sub_questions: tuple[str, ...] = ()
         if self._rewriter is not None:
@@ -60,7 +63,9 @@ class MultiChannelRetrievalEngine:
                 sub_questions = result.sub_questions
             except Exception:
                 logger.exception("问题改写失败，使用原问题检索")
-        context = SearchContext(question, rewritten, self._budget, sub_questions)
+        context = SearchContext(
+            question, rewritten, self._budget, sub_questions, scope or RetrievalScope()
+        )
         results = await asyncio.gather(
             *(self._run_channel(channel, context) for channel in self._channels)
         )

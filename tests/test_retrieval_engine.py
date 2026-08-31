@@ -9,6 +9,7 @@ from app.rag.retrieval.channels import VectorSearchChannel
 from app.rag.retrieval.engine import MultiChannelRetrievalEngine
 from app.rag.retrieval.models import (
     RetrievalBudget,
+    RetrievalScope,
     RetrievedChunk,
     SearchChannelResult,
     SearchChannelType,
@@ -157,6 +158,26 @@ async def test_vector_channel_passes_recall_budget_to_retriever() -> None:
     assert retriever.call == ("rewritten", 20)
     assert result.channel_type is SearchChannelType.VECTOR
     assert result.chunks == (expected,)
+
+
+async def test_vector_channel_passes_intent_scope() -> None:
+    class ScopedRetriever:
+        def __init__(self) -> None:
+            self.options = None
+
+        async def retrieve(self, question: str, **options):
+            self.options = options
+            return []
+
+    retriever = ScopedRetriever()
+    context = SearchContext(
+        "original",
+        "rewritten",
+        RetrievalBudget(20, 40, 10),
+        scope=RetrievalScope(("kb-a", "kb-b"), 8),
+    )
+    await VectorSearchChannel(retriever).search(context)
+    assert retriever.options == {"limit": 8, "collections": ("kb-a", "kb-b")}
 
 
 async def test_engine_passes_rewritten_question_to_channels() -> None:

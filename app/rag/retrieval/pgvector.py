@@ -33,18 +33,22 @@ class PgVectorRetrievalEngine:
         self._top_k = max(1, top_k)
 
     async def retrieve(
-        self, question: str, *, limit: int | None = None
+        self,
+        question: str,
+        *,
+        limit: int | None = None,
+        collections: tuple[str, ...] = (),
     ) -> list[RetrievedChunk]:
         try:
             resolved_limit = max(1, limit or self._top_k)
-            groups = await self._collection_groups()
+            groups = await self._collection_groups(collections)
             if not groups:
                 return []
             collected: list[RetrievedChunk] = []
-            for model_id, collections in groups.items():
+            for model_id, model_collections in groups.items():
                 vector = await self._embedding.embed(question, model_id=model_id)
                 collected.extend(
-                    await self._search(vector, collections, resolved_limit)
+                    await self._search(vector, model_collections, resolved_limit)
                 )
             collected.sort(key=lambda item: (-item.score, item.doc_id, str(item.id)))
             return collected[:resolved_limit]
@@ -52,14 +56,19 @@ class PgVectorRetrievalEngine:
             logger.exception("pgvector 检索失败，按空通道降级")
             return []
 
-    async def _collection_groups(self) -> dict[str, list[str]]:
+    async def _collection_groups(
+        self, collections: tuple[str, ...] = ()
+    ) -> dict[str, list[str]]:
+        filters = [KnowledgeBase.deleted == 0]
+        if collections:
+            filters.append(KnowledgeBase.collection_name.in_(collections))
         async with self._sessions() as session:
             rows = (
                 await session.execute(
                     select(
                         KnowledgeBase.embedding_model,
                         KnowledgeBase.collection_name,
-                    ).where(KnowledgeBase.deleted == 0)
+                    ).where(*filters)
                 )
             ).all()
         grouped: dict[str, list[str]] = defaultdict(list)

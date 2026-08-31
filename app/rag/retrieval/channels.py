@@ -13,7 +13,11 @@ from app.rag.retrieval.models import (
 
 class VectorRetriever(Protocol):
     async def retrieve(
-        self, question: str, *, limit: int | None = None
+        self,
+        question: str,
+        *,
+        limit: int | None = None,
+        collections: tuple[str, ...] = (),
     ) -> list[RetrievedChunk]: ...
 
 
@@ -26,10 +30,10 @@ class VectorSearchChannel:
 
     async def search(self, context: SearchContext) -> SearchChannelResult:
         started = perf_counter()
-        chunks = await self._retriever.retrieve(
-            context.main_question,
-            limit=context.budget.recall_budget,
-        )
+        options = {"limit": context.scope.top_k or context.budget.recall_budget}
+        if context.scope.collections:
+            options["collections"] = context.scope.collections
+        chunks = await self._retriever.retrieve(context.main_question, **options)
         return SearchChannelResult(
             channel_type=self.channel_type,
             channel_name=self.channel_name,

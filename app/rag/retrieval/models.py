@@ -58,11 +58,22 @@ class RetrievalBudget:
 
 
 @dataclass(frozen=True, slots=True)
+class RetrievalScope:
+    collections: tuple[str, ...] = ()
+    top_k: int | None = None
+
+    @property
+    def restricted(self) -> bool:
+        return bool(self.collections)
+
+
+@dataclass(frozen=True, slots=True)
 class SearchContext:
     original_question: str
     rewritten_question: str
     budget: RetrievalBudget
     sub_questions: tuple[str, ...] = ()
+    scope: RetrievalScope = RetrievalScope()
 
     @property
     def main_question(self) -> str:

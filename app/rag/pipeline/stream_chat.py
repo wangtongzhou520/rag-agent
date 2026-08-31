@@ -16,7 +16,8 @@ from app.rag.intent.node import SubQuestionIntent
 from app.rag.intent.resolver import IntentResolver
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.pipeline.event_handler import StreamEventCallback
-from app.rag.retrieval.models import RetrievedChunk
+from app.rag.retrieval.models import RetrievalScope, RetrievedChunk
+from app.rag.retrieval.scope import RetrievalScopeResolver
 from app.rag.rewrite.models import RewriteResult
 
 EMPTY_RETRIEVAL_TEXT = "未检索到与问题相关的文档内容。"
@@ -25,7 +26,9 @@ EMPTY_RETRIEVAL_TEXT = "未检索到与问题相关的文档内容。"
 class RetrievalEngine(Protocol):
     """多通道检索引擎（docs/02）；本期由 EmptyRetrievalEngine 占位。"""
 
-    async def retrieve(self, question: str) -> Sequence[Any]: ...
+    async def retrieve(
+        self, question: str, *, scope: RetrievalScope | None = None
+    ) -> Sequence[Any]: ...
 
 
 class EmptyRetrievalEngine:
@@ -76,7 +79,11 @@ class StreamChatPipeline:
                 except Exception:  # noqa: BLE001
                     ctx.intents = []
             # ④ handle_guidance / ⑤ handle_system_only：本期不触发
-            chunks = await self._retrieval.retrieve(ctx.question)
+            scope = RetrievalScopeResolver().resolve(ctx.intents)
+            if scope.restricted:
+                chunks = await self._retrieval.retrieve(ctx.question, scope=scope)
+            else:
+                chunks = await self._retrieval.retrieve(ctx.question)
             if not chunks:
                 # ⑥ 空检索短路：固定文案 + 正常落库（无 sources）
                 await callback.on_content(EMPTY_RETRIEVAL_TEXT)

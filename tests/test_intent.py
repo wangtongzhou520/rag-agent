@@ -1,8 +1,9 @@
 """M3 意图树分类与多问题封顶。"""
 
 from app.rag.intent.classifier import DefaultIntentClassifier
-from app.rag.intent.node import IntentNode
+from app.rag.intent.node import IntentNode, NodeScore, SubQuestionIntent
 from app.rag.intent.resolver import IntentResolver
+from app.rag.retrieval.scope import RetrievalScopeResolver
 from app.rag.rewrite.models import RewriteResult
 
 
@@ -36,3 +37,27 @@ class FakeClassifier:
 async def test_resolver_caps_total_and_keeps_each_question_head() -> None:
     result = await IntentResolver(FakeClassifier()).resolve(RewriteResult("x", ("一", "二")))
     assert [len(item.node_scores) for item in result] == [2, 1]
+
+
+def test_scope_resolver_merges_kb_collections_and_top_k() -> None:
+    first = IntentNode(
+        10,
+        "a",
+        "A",
+        2,
+        collection_names=("kb-a", "kb-b"),
+        top_k=12,
+    )
+    second = IntentNode(
+        11,
+        "b",
+        "B",
+        2,
+        collection_names=("kb-b", "kb-c"),
+        top_k=20,
+    )
+    scope = RetrievalScopeResolver().resolve(
+        [SubQuestionIntent("问题", (NodeScore(first, 0.9), NodeScore(second, 0.8)))]
+    )
+    assert scope.collections == ("kb-a", "kb-b", "kb-c")
+    assert scope.top_k == 20
