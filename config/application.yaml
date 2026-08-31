@@ -83,7 +83,10 @@ ai:
       - { id: qwen-emb-local,         provider: ollama,      model: "qwen3-embedding:8b-fp16",     dimension: 1536, priority: 2 }
       - { id: text-embedding-3-large, provider: aihubmix,    model: text-embedding-3-large,        dimension: 1536, priority: 3 }
   rerank:
-    candidates: []
+    default_model: qwen3-rerank
+    candidates:
+      - { id: qwen3-rerank, provider: bailian, model: qwen3-rerank, url: "https://ws-95otow917zuyeam7.cn-beijing.maas.aliyuncs.com/compatible-api/v1/reranks", priority: 1 }
+      - { id: rerank-noop, provider: noop, model: noop, priority: 100 }
   selection:
     failure_threshold: 2
     open_duration_ms: 30000

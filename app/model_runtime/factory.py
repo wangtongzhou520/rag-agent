@@ -22,6 +22,8 @@ from app.model_runtime.embedding.providers import (
 )
 from app.model_runtime.embedding.service import RoutingEmbeddingService
 from app.model_runtime.http import HttpClientFactory
+from app.model_runtime.rerank.base import BaiLianRerankClient, NoopRerankClient
+from app.model_runtime.rerank.service import RoutingRerankService
 from app.model_runtime.routing import (
     ModelCandidate,
     ModelHealthStore,
@@ -52,6 +54,7 @@ class ModelRuntime:
 
     llm: RoutingLLMService
     embedding: RoutingEmbeddingService
+    rerank: RoutingRerankService
     health: ModelHealthStore
     http: HttpClientFactory
 
@@ -150,4 +153,36 @@ def build_model_runtime(settings: Settings) -> ModelRuntime:
         embedding_candidates,
         settings.ai.embedding.default_model,
     )
-    return ModelRuntime(llm=llm, embedding=embedding, health=health, http=http)
+    rerank_candidates = [
+        ModelCandidate(
+            id=candidate.resolved_id,
+            provider=candidate.provider,
+            model=candidate.model,
+            url=candidate.url,
+            priority=candidate.priority,
+            enabled=candidate.enabled,
+        )
+        for candidate in settings.ai.rerank.candidates
+        if candidate.provider == ModelProvider.NOOP
+        or candidate.provider in configured
+    ]
+    rerank_clients = {str(ModelProvider.NOOP): NoopRerankClient()}
+    if str(ModelProvider.BAILIAN) in configured:
+        provider = settings.ai.providers.bailian
+        rerank_clients[str(ModelProvider.BAILIAN)] = BaiLianRerankClient(
+            http, provider.url, provider.api_key, provider.endpoints
+        )
+    rerank = RoutingRerankService(
+        ModelSelector({}, {}, health_store=health),
+        health,
+        rerank_clients,
+        rerank_candidates,
+        settings.ai.rerank.default_model,
+    )
+    return ModelRuntime(
+        llm=llm,
+        embedding=embedding,
+        rerank=rerank,
+        health=health,
+        http=http,
+    )

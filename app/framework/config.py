@@ -137,6 +137,24 @@ class CandidateSettings(BaseModel):
     candidates: list[str] = []
 
 
+class RerankCandidateSettings(BaseModel):
+    provider: str
+    model: str
+    id: str | None = None
+    url: str | None = None
+    priority: int = 100
+    enabled: bool = True
+
+    @property
+    def resolved_id(self) -> str:
+        return self.id or f"{self.provider}::{self.model}"
+
+
+class RerankSettings(BaseModel):
+    default_model: str | None = None
+    candidates: list[RerankCandidateSettings] = []
+
+
 class SelectionSettings(BaseModel):
     failure_threshold: int = 2
     open_duration_ms: int = 30000
@@ -150,7 +168,7 @@ class AiSettings(BaseModel):
     providers: AiProvidersSettings = AiProvidersSettings()
     chat: ChatSettings = ChatSettings()
     embedding: EmbeddingSettings = EmbeddingSettings()
-    rerank: CandidateSettings = CandidateSettings()
+    rerank: RerankSettings = RerankSettings()
     selection: SelectionSettings = SelectionSettings()
     stream: AiStreamSettings = AiStreamSettings()
 

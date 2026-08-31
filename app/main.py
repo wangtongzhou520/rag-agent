@@ -44,7 +44,6 @@ from app.rag.retrieval.engine import MultiChannelRetrievalEngine
 from app.rag.retrieval.models import RetrievalBudget, SearchChannelType
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.retrieval.postprocessors import WeightedRrfFusion
-from app.rag.retrieval.rerank import NoopReranker
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
 from app.rag.rewrite.router import router as rewrite_router
 from app.rag.rewrite.term_mapping import ModelRewriteService, QueryTermMappingService
@@ -130,7 +129,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             query_mapping_service,
             enabled=settings.rag.query_rewrite.enabled,
         ),
-        reranker=NoopReranker(),
+        reranker=model_runtime.rerank,
     )
     guidance_settings = settings.rag.guidance
     pipeline = StreamChatPipeline(
