@@ -49,6 +49,7 @@ from app.rag.rewrite.router import router as rewrite_router
 from app.rag.rewrite.term_mapping import ModelRewriteService, QueryTermMappingService
 from app.rag.router import router as rag_router
 from app.rag.service import RAGChatService
+from app.rag.trace.record import RagTraceRecordService
 from app.system.auth.router import router as auth_router
 from app.system.auth.service import AuthService
 
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         context_top_k=settings.rag.default.top_k,
     )
     weights = settings.rag.fusion.channel_weights
+    trace_service = RagTraceRecordService(engine)
     query_mapping_service = QueryTermMappingService(
         engine=engine,
         cache=QueryTermMappingCacheManager(redis_client, settings.redis.key_prefix),
@@ -130,6 +132,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             enabled=settings.rag.query_rewrite.enabled,
         ),
         reranker=model_runtime.rerank,
+        trace=trace_service,
     )
     guidance_settings = settings.rag.guidance
     pipeline = StreamChatPipeline(
@@ -152,7 +155,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.auth_service = AuthService(
         engine, redis_client, settings.auth, settings.redis
     )
-    app.state.rag_chat_service = RAGChatService(memory_service, pipeline, settings)
+    app.state.rag_chat_service = RAGChatService(
+        memory_service, pipeline, settings, trace_service
+    )
     app.state.knowledge_service = KnowledgeService(
         engine,
         MimeTypeDetector(),

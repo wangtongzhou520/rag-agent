@@ -95,3 +95,42 @@ class MessageFeedback(AuditMixin, Base):
     vote: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     reason: Mapped[str | None] = mapped_column(String(255))
     comment: Mapped[str | None] = mapped_column(String(1024))
+
+
+class RagTraceRun(AuditMixin, Base):
+    __tablename__ = "t_rag_trace_run"
+    __table_args__ = (
+        UniqueConstraint("trace_id", name="uq_rag_trace_id"),
+        Index("idx_rag_trace_task", "task_id"),
+        Index("idx_rag_trace_user", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    trace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    trace_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    entry_point: Mapped[str] = mapped_column(String(256), nullable=False)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    task_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(String(1000))
+    start_time: Mapped[datetime] = mapped_column(nullable=False)
+    end_time: Mapped[datetime | None] = mapped_column()
+    duration_ms: Mapped[int | None] = mapped_column(BigInteger)
+    extra_data: Mapped[dict | None] = mapped_column(JSONB)
+
+
+class RagTraceNode(AuditMixin, Base):
+    __tablename__ = "t_rag_trace_node"
+    __table_args__ = (
+        UniqueConstraint("trace_id", "node_id", name="uq_rag_trace_node"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    trace_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    node_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    node_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    node_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    duration_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    extra_data: Mapped[dict | None] = mapped_column(JSONB)

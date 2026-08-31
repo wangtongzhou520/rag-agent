@@ -1,9 +1,11 @@
 """M3 多通道并行检索编排。"""
 
 import asyncio
+from time import perf_counter
 from typing import Protocol
 
 from app.framework.logging import get_logger
+from app.framework.trace_ctx import get_trace_id
 from app.rag.retrieval.models import (
     RetrievalBudget,
     RetrievalScope,
@@ -18,6 +20,7 @@ from app.rag.retrieval.postprocessors import (
 )
 from app.rag.retrieval.rerank import Reranker, RerankPostProcessor
 from app.rag.rewrite.models import RewriteResult
+from app.rag.trace.record import RagTraceRecordService
 
 logger = get_logger(__name__)
 
@@ -44,6 +47,7 @@ class MultiChannelRetrievalEngine:
         rewriter: QueryRewriter | None = None,
         reranker: Reranker | None = None,
         rerank_timeout_ms: int = 10_000,
+        trace: RagTraceRecordService | None = None,
     ) -> None:
         if timeout_ms <= 0:
             raise ValueError("timeout_ms 必须大于 0")
@@ -58,10 +62,12 @@ class MultiChannelRetrievalEngine:
             if reranker is not None
             else None
         )
+        self._trace = trace
 
     async def retrieve(
         self, question: str, *, scope: RetrievalScope | None = None
     ) -> list[RetrievedChunk]:
+        started = perf_counter()
         rewritten = question
         sub_questions: tuple[str, ...] = ()
         if self._rewriter is not None:
@@ -80,10 +86,36 @@ class MultiChannelRetrievalEngine:
         deduplicated = self._deduplication.process(results)
         candidates = self._fusion.process(deduplicated)
         if self._rerank is not None:
-            return await self._rerank.process(
+            final = await self._rerank.process(
                 context.main_question, candidates, self._budget.context_top_k
             )
-        return candidates[: self._budget.context_top_k]
+        else:
+            final = candidates[: self._budget.context_top_k]
+        trace_id = get_trace_id()
+        if self._trace is not None and trace_id:
+            await self._trace.record_retrieval(
+                trace_id,
+                int((perf_counter() - started) * 1000),
+                {
+                    "originalQuestion": question,
+                    "rewrittenQuestion": context.main_question,
+                    "channels": [
+                        {
+                            "name": result.channel_name,
+                            "type": str(result.channel_type),
+                            "latencyMs": result.latency_ms,
+                            "count": len(result.chunks),
+                            "metadata": result.metadata,
+                        }
+                        for result in results
+                    ],
+                    "fusionCandidateCount": len(candidates),
+                    "finalCount": len(final),
+                    "candidateIds": [item.key for item in candidates],
+                    "finalIds": [item.key for item in final],
+                },
+            )
+        return final
 
     async def _run_channel(
         self, channel: SearchChannel, context: SearchContext

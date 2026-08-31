@@ -3,6 +3,7 @@
 from contextvars import ContextVar, Token
 
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
+_trace_id: ContextVar[str | None] = ContextVar("trace_id", default=None)
 
 
 def get_request_id() -> str | None:
@@ -17,4 +18,13 @@ def reset_request_id(token: Token[str | None]) -> None:
     _request_id.reset(token)
 
 
-# TODO(M4): 扩展 trace_id / task_id / 不可变 node_stack 与节点装饰器
+def get_trace_id() -> str | None:
+    return _trace_id.get()
+
+
+def set_trace_id(trace_id: str) -> Token[str | None]:
+    return _trace_id.set(trace_id)
+
+
+def reset_trace_id(token: Token[str | None]) -> None:
+    _trace_id.reset(token)
