@@ -3,7 +3,7 @@
 import asyncio
 
 from app.rag.intent.classifier import DefaultIntentClassifier
-from app.rag.intent.node import SubQuestionIntent
+from app.rag.intent.node import IntentKind, SubQuestionIntent
 from app.rag.rewrite.models import RewriteResult
 
 
@@ -37,3 +37,8 @@ class IntentResolver:
             mutable[index].append(score)
             quota -= 1
         return [SubQuestionIntent(results[index].sub_question, tuple(scores)) for index, scores in enumerate(mutable)]
+
+    @staticmethod
+    def is_system_only(intents: list[SubQuestionIntent]) -> bool:
+        scores = [score for item in intents for score in item.node_scores]
+        return len(scores) == 1 and scores[0].node.kind == IntentKind.SYSTEM

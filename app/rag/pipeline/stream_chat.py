@@ -78,7 +78,10 @@ class StreamChatPipeline:
                     )
                 except Exception:  # noqa: BLE001
                     ctx.intents = []
-            # ④ handle_guidance / ⑤ handle_system_only：本期不触发
+            # ④ handle_guidance 待接入；⑤ 纯 SYSTEM 意图不访问知识库
+            if IntentResolver.is_system_only(ctx.intents):
+                await self._stream_system_response(ctx, callback)
+                return
             scope = RetrievalScopeResolver().resolve(ctx.intents)
             if scope.restricted:
                 chunks = await self._retrieval.retrieve(ctx.question, scope=scope)
@@ -143,3 +146,18 @@ class StreamChatPipeline:
         ]
         request = ChatRequest(messages=messages, thinking=ctx.deep_thinking)
         await self._llm.stream_chat(request, callback)
+
+    async def _stream_system_response(
+        self, ctx: StreamChatContext, callback: StreamEventCallback
+    ) -> None:
+        messages = [
+            ChatMessage(
+                role=ChatRole.SYSTEM,
+                content="你是友好、简洁的智能助手。直接回答用户，不要编造知识库来源或引用。",
+            ),
+            *ctx.history,
+            ChatMessage(role=ChatRole.USER, content=ctx.question),
+        ]
+        await self._llm.stream_chat(
+            ChatRequest(messages=messages, thinking=ctx.deep_thinking), callback
+        )

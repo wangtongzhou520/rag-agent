@@ -8,6 +8,7 @@ from uuid_utils import uuid7
 
 from app.framework.chat_types import ChatMessage, ChatRole
 from app.framework.sse import SseSender
+from app.rag.intent.node import IntentKind, IntentNode, NodeScore, SubQuestionIntent
 from app.rag.memory.store import normalize_history
 from app.rag.pipeline.event_handler import StreamChatEventHandler
 from app.rag.pipeline.stream_chat import (
@@ -119,6 +120,28 @@ async def test_history_loaded_before_question_persisted() -> None:
     await pipeline.execute(ctx, make_handler(SseSender(), memory))
 
     assert ctx.history == history
+
+
+async def test_system_intent_streams_without_retrieval() -> None:
+    class SystemResolver:
+        async def resolve(self, rewrite_result):
+            node = IntentNode(1, "system.chat", "闲聊", 2, kind=IntentKind.SYSTEM)
+            return [SubQuestionIntent(rewrite_result.rewritten_question, (NodeScore(node, 0.99),))]
+
+    class MustNotRetrieve:
+        async def retrieve(self, question: str):
+            raise AssertionError("SYSTEM 意图不应进入检索")
+
+    memory = FakeMemory()
+    llm = FakeLLM(chunks=["你好！"])
+    pipeline = StreamChatPipeline(memory, llm, MustNotRetrieve(), SystemResolver())
+    sender = SseSender()
+
+    await pipeline.execute(make_ctx(question="你好"), make_handler(sender, memory))
+    body = await drain(sender)
+
+    assert "你好！" in body
+    assert "不要编造知识库来源" in llm.requests[0].messages[0].content
 
 
 async def test_rag_response_streams_llm_and_persists_normal() -> None:
