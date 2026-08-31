@@ -8,15 +8,16 @@ from app.rag.rewrite.models import RewriteResult
 
 
 class IntentResolver:
-    def __init__(self, classifier: DefaultIntentClassifier, *, max_per_question: int = 3, max_total: int = 3) -> None:
+    def __init__(self, classifier: DefaultIntentClassifier, *, min_score: float = 0.35, max_per_question: int = 3, max_total: int = 3) -> None:
         self._classifier = classifier
+        self._min_score = min_score
         self._max_per_question = max_per_question
         self._max_total = max_total
 
     async def resolve(self, rewrite_result: RewriteResult) -> list[SubQuestionIntent]:
         async def one(question: str) -> SubQuestionIntent:
             try:
-                scores = (await self._classifier.classify(question))[: self._max_per_question]
+                scores = [score for score in await self._classifier.classify(question) if score.score >= self._min_score][: self._max_per_question]
             except Exception:  # noqa: BLE001
                 scores = []
             return SubQuestionIntent(question, tuple(scores))

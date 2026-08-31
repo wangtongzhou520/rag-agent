@@ -205,7 +205,9 @@ class ScopeSettings(BaseModel):
 
 
 class IntentSettings(BaseModel):
+    min_score: float = 0.35
     confidence_threshold: float = 0.6
+    max_intent_count: int = 3
 
 
 class GuidanceSettings(BaseModel):

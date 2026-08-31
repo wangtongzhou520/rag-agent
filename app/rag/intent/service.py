@@ -1,6 +1,6 @@
 """意图树管理服务。"""
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.rag.intent.cache import IntentTreeCacheManager
@@ -45,6 +45,28 @@ class IntentTreeService:
             if row is None:
                 raise ValueError("意图节点不存在")
             row.deleted = 1
+        await self._cache.evict()
+
+    async def batch_enable(self, node_ids: list[int], enabled: bool) -> None:
+        await self._batch_update(node_ids, {"enabled": int(enabled)})
+
+    async def batch_delete(self, node_ids: list[int]) -> None:
+        await self._batch_update(node_ids, {"deleted": 1})
+
+    async def _batch_update(self, node_ids: list[int], values: dict) -> None:
+        if not node_ids or len(node_ids) > 500:
+            raise ValueError("ids 必填且最多 500 个")
+        async with self._sessions.begin() as session:
+            result = await session.execute(
+                update(IntentNodeRecord)
+                .where(
+                    IntentNodeRecord.id.in_(set(node_ids)),
+                    IntentNodeRecord.deleted == 0,
+                )
+                .values(**values)
+            )
+            if result.rowcount != len(set(node_ids)):
+                raise ValueError("部分意图节点不存在")
         await self._cache.evict()
 
     @staticmethod

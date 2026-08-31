@@ -115,7 +115,9 @@ rag:
   scope:
     supplement_ratio: 0.25
   intent:
+    min_score: 0.35
     confidence_threshold: 0.6
+    max_intent_count: 3
   guidance:
     enabled: true
     ambiguity_score_ratio: 0.8

@@ -106,13 +106,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cache=QueryTermMappingCacheManager(redis_client, settings.redis.key_prefix),
     )
     intent_cache = IntentTreeCacheManager(redis_client, settings.redis.key_prefix)
+    intent_settings = settings.rag.intent
     intent_resolver = IntentResolver(
         DefaultIntentClassifier(
             model_runtime.llm,
             engine=engine,
             cache=intent_cache,
-            min_score=settings.rag.intent.confidence_threshold,
-        )
+            min_score=0.0,
+        ),
+        min_score=intent_settings.min_score,
+        max_total=intent_settings.max_intent_count,
     )
     retrieval = MultiChannelRetrievalEngine(
         [

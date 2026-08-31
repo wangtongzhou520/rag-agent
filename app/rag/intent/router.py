@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from app.framework.exceptions import ClientException
 from app.framework.result import Results
 from app.rag.intent.node import IntentNode
-from app.rag.intent.schemas import IntentNodeVO, IntentNodeWrite
+from app.rag.intent.schemas import IntentNodeBatch, IntentNodeVO, IntentNodeWrite
 from app.rag.intent.service import IntentTreeService
 from app.system.auth.deps import require_user
 from app.system.auth.models import LoginUser
@@ -35,6 +35,33 @@ async def create(body: IntentNodeWrite, request: Request, user: Annotated[LoginU
     except ValueError as exc:
         raise ClientException(str(exc)) from exc
     return Results.success(str(node_id)).model_dump(by_alias=True)
+
+
+@router.post("/batch/enable")
+async def batch_enable(body: IntentNodeBatch, request: Request) -> dict:
+    try:
+        await _service(request).batch_enable(body.ids, True)
+    except ValueError as exc:
+        raise ClientException(str(exc)) from exc
+    return Results.success().model_dump(by_alias=True)
+
+
+@router.post("/batch/disable")
+async def batch_disable(body: IntentNodeBatch, request: Request) -> dict:
+    try:
+        await _service(request).batch_enable(body.ids, False)
+    except ValueError as exc:
+        raise ClientException(str(exc)) from exc
+    return Results.success().model_dump(by_alias=True)
+
+
+@router.post("/batch/delete")
+async def batch_delete(body: IntentNodeBatch, request: Request) -> dict:
+    try:
+        await _service(request).batch_delete(body.ids)
+    except ValueError as exc:
+        raise ClientException(str(exc)) from exc
+    return Results.success().model_dump(by_alias=True)
 
 
 @router.put("/{node_id}")

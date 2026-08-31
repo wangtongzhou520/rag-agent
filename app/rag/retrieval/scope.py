@@ -7,17 +7,28 @@ from app.rag.retrieval.models import RetrievalScope
 
 
 class RetrievalScopeResolver:
+    def __init__(self, *, min_score: float = 0.4, confidence_threshold: float = 0.6) -> None:
+        self._min_score = min_score
+        self._confidence_threshold = confidence_threshold
+
     def resolve(self, intents: list[SubQuestionIntent]) -> RetrievalScope:
         collections: list[str] = []
         top_ks: list[int] = []
         for sub_intent in intents:
             for score in sub_intent.node_scores:
                 node = score.node
-                if node.kind != IntentKind.KB:
+                if node.kind != IntentKind.KB or score.score < self._min_score:
                     continue
                 collections.extend(node.effective_collection_names())
                 if node.top_k and node.top_k > 0:
                     top_ks.append(node.top_k)
+        if not collections or not any(
+            score.score >= self._confidence_threshold
+            for item in intents
+            for score in item.node_scores
+            if score.node.kind == IntentKind.KB
+        ):
+            return RetrievalScope()
         return RetrievalScope(
             collections=tuple(dict.fromkeys(collections)),
             top_k=max(top_ks) if top_ks else None,

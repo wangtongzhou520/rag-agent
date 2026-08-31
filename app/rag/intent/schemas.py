@@ -25,3 +25,6 @@ class IntentNodeVO(IntentNodeWrite):
     full_path: str = Field("", alias="fullPath")
     children: list["IntentNodeVO"] = []
 
+
+class IntentNodeBatch(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
