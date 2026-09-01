@@ -12,10 +12,11 @@ Python 3.12+ / FastAPI / SQLAlchemy 2.0 (async) + asyncpg / pgvector / redis-py 
 
 ## 前端状态
 
-`frontend/` React SPA 的 F0 工程底座已完成：包含明亮蓝色设计系统、响应式登录页、
-问答/管理工作区骨架、REST 契约层、登录态恢复、用户/管理员路由守卫以及
-Vitest + MSW + Playwright 测试基线。下一阶段 F1 将接入完整 SSE 问答状态机、Markdown
-回答、思考过程、来源引用和文档预览；详细规划见 `08-前端工程与页面设计.md`。
+`frontend/` React SPA 的 F0/F1 已完成：包含明亮蓝色设计系统、响应式登录页、
+REST 契约层、登录态与权限路由、SSE 六事件状态机、Markdown 回答、思考过程、
+来源定位和文档预览，以及 Vitest + MSW + Playwright 测试基线。下一阶段 F2 将建设
+知识库、文档/Chunk、意图树、查询词映射与 RAG Trace 管理页面；详细规划见
+`08-前端工程与页面设计.md`。
 
 ## 设计文档
 

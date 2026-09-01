@@ -4,7 +4,7 @@ import { ApiError } from "@/shared/api/error";
 import { unwrapResult } from "@/shared/api/result";
 
 const TOKEN_KEY = "ragent.auth.token";
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api/ragent").replace(/\/$/, "");
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api/ragent").replace(/\/$/, "");
 
 let unauthorizedHandler: (() => void) | undefined;
 
