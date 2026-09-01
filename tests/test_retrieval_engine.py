@@ -7,6 +7,10 @@ import pytest
 
 from app.rag.retrieval.channels import VectorSearchChannel
 from app.rag.retrieval.engine import MultiChannelRetrievalEngine
+from app.rag.retrieval.metadata import (
+    DocumentMetadata,
+    MetadataEnrichmentPostProcessor,
+)
 from app.rag.retrieval.models import (
     RetrievalBudget,
     RetrievalScope,
@@ -249,3 +253,73 @@ async def test_reranker_failure_preserves_fusion_order() -> None:
         reranker=FailingReranker(),
     )
     assert await engine.retrieve("question") == [first]
+
+
+async def test_metadata_enrichment_runs_after_rerank_and_context_limit() -> None:
+    first_id, second_id = uuid4(), uuid4()
+    first = RetrievedChunk(first_id, "first", 0.9)
+    second = RetrievedChunk(second_id, "second", 0.8)
+
+    class ReverseReranker:
+        async def rerank(self, query, candidates, top_n):
+            return [second]
+
+    class Resolver:
+        def __init__(self) -> None:
+            self.chunk_ids = ()
+
+        async def resolve_chunks(self, chunk_ids):
+            self.chunk_ids = chunk_ids
+            return {
+                second_id: DocumentMetadata(
+                    22, "说明书", "file", "pdf", chunk_index=3
+                )
+            }
+
+        async def resolve_documents(self, doc_ids):
+            return {}
+
+    resolver = Resolver()
+    engine = MultiChannelRetrievalEngine(
+        [FakeChannel(SearchChannelType.VECTOR, [first, second])],
+        RetrievalBudget(2, 2, 1),
+        WeightedRrfFusion(candidate_limit=2),
+        reranker=ReverseReranker(),
+        metadata_enricher=MetadataEnrichmentPostProcessor(resolver),
+    )
+
+    results = await engine.retrieve("question")
+
+    assert resolver.chunk_ids == (second_id,)
+    assert results == [
+        RetrievedChunk(
+            second_id,
+            "second",
+            0.8,
+            22,
+            "说明书",
+            "file",
+            3,
+            "pdf",
+        )
+    ]
+
+
+async def test_metadata_enrichment_failure_preserves_results() -> None:
+    expected = RetrievedChunk(uuid4(), "web", 0.9, source_type="web")
+
+    class FailingResolver:
+        async def resolve_chunks(self, chunk_ids):
+            raise RuntimeError("database unavailable")
+
+        async def resolve_documents(self, doc_ids):
+            raise AssertionError("not reached")
+
+    engine = MultiChannelRetrievalEngine(
+        [FakeChannel(SearchChannelType.WEB, [expected])],
+        RetrievalBudget(1, 1, 1),
+        WeightedRrfFusion(candidate_limit=1),
+        metadata_enricher=MetadataEnrichmentPostProcessor(FailingResolver()),
+    )
+
+    assert await engine.retrieve("question") == [expected]

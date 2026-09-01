@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.framework.chat_types import ChatMessage, ChatRequest, ChatRole
+from app.framework.logging import get_logger
 from app.model_runtime.chat.service import LLMService
 from app.rag.intent.guidance import IntentGuidanceService
 from app.rag.intent.node import SubQuestionIntent
@@ -25,21 +26,38 @@ from app.rag.source.assembler import SourcesAssembler
 from app.rag.source.citation import CitationContextEnricher, sanitize_attribute
 
 EMPTY_RETRIEVAL_TEXT = "未检索到与问题相关的文档内容。"
+logger = get_logger(__name__)
 
 
 class RetrievalEngine(Protocol):
     """多通道检索引擎（docs/02）；本期由 EmptyRetrievalEngine 占位。"""
 
     async def retrieve(
-        self, question: str, *, scope: RetrievalScope | None = None
+        self,
+        question: str,
+        *,
+        scope: RetrievalScope | None = None,
+        rewrite_result: RewriteResult | None = None,
     ) -> Sequence[Any]: ...
 
 
 class EmptyRetrievalEngine:
     """知识库就绪前的空检索实现：恒返回空，触发短路文案。"""
 
-    async def retrieve(self, question: str) -> Sequence[Any]:
+    async def retrieve(
+        self,
+        question: str,
+        *,
+        scope: RetrievalScope | None = None,
+        rewrite_result: RewriteResult | None = None,
+    ) -> Sequence[Any]:
         return []
+
+
+class QueryRewriter(Protocol):
+    async def rewrite_with_split(
+        self, question: str, history: Sequence[ChatMessage] = ()
+    ) -> RewriteResult: ...
 
 
 @dataclass(slots=True)
@@ -67,6 +85,9 @@ class StreamChatPipeline:
         intent_resolver: IntentResolver | None = None,
         mcp_dispatcher: McpIntentDispatcher | None = None,
         guidance: IntentGuidanceService | None = None,
+        *,
+        rewriter: QueryRewriter | None = None,
+        scope_resolver: RetrievalScopeResolver | None = None,
     ) -> None:
         self._memory = memory
         self._llm = llm
@@ -74,21 +95,31 @@ class StreamChatPipeline:
         self._intent_resolver = intent_resolver
         self._mcp_dispatcher = mcp_dispatcher
         self._guidance = guidance
+        self._rewriter = rewriter
+        self._scope_resolver = scope_resolver or RetrievalScopeResolver()
 
     async def execute(self, ctx: StreamChatContext, callback: StreamEventCallback) -> None:
         try:
             await self._load_memory(ctx, callback)
-            # ② rewrite_query 由检索引擎执行；③ 意图分类结果暂存上下文供后续路由使用
+            # ② 只改写一次；③ 意图分类与后续检索共享同一份结果
+            rewrite_result = RewriteResult(ctx.question, (ctx.question,))
+            if self._rewriter is not None:
+                try:
+                    rewrite_result = await self._rewriter.rewrite_with_split(
+                        ctx.question, ctx.history
+                    )
+                except Exception:
+                    logger.exception("问题改写失败，使用原问题继续")
             if self._intent_resolver is not None:
                 try:
-                    ctx.intents = await self._intent_resolver.resolve(
-                        RewriteResult(ctx.question, (ctx.question,))
-                    )
+                    ctx.intents = await self._intent_resolver.resolve(rewrite_result)
                 except Exception:  # noqa: BLE001
                     ctx.intents = []
             # ④ 歧义引导命中后直接返回追问；⑤ 纯 SYSTEM 意图不访问知识库
             if self._guidance is not None:
-                decision = await self._guidance.detect(ctx.question, ctx.intents)
+                decision = await self._guidance.detect(
+                    rewrite_result.rewritten_question, ctx.intents
+                )
                 if decision.required:
                     await callback.on_content(decision.message)
                     await callback.on_complete()
@@ -101,11 +132,15 @@ class StreamChatPipeline:
                 if evidence:
                     await self._stream_mcp_response(ctx, evidence, callback)
                     return
-            scope = RetrievalScopeResolver().resolve(ctx.intents)
+            scope = self._scope_resolver.resolve(ctx.intents)
             if scope.restricted:
-                chunks = await self._retrieval.retrieve(ctx.question, scope=scope)
+                chunks = await self._retrieval.retrieve(
+                    ctx.question, scope=scope, rewrite_result=rewrite_result
+                )
             else:
-                chunks = await self._retrieval.retrieve(ctx.question)
+                chunks = await self._retrieval.retrieve(
+                    ctx.question, rewrite_result=rewrite_result
+                )
             if not chunks:
                 # ⑥ 空检索短路：固定文案 + 正常落库（无 sources）
                 await callback.on_content(EMPTY_RETRIEVAL_TEXT)

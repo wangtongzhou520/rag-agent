@@ -32,7 +32,7 @@ from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
 from app.rag.intent.cache import IntentTreeCacheManager
 from app.rag.intent.classifier import DefaultIntentClassifier
-from app.rag.intent.guidance import IntentGuidanceService
+from app.rag.intent.guidance import IntentGuidanceService, ModelAmbiguityChecker
 from app.rag.intent.resolver import IntentResolver
 from app.rag.intent.router import router as intent_router
 from app.rag.intent.service import IntentTreeService
@@ -41,9 +41,14 @@ from app.rag.memory.store import ConversationMemoryStore
 from app.rag.pipeline.stream_chat import StreamChatPipeline
 from app.rag.retrieval.channels import VectorSearchChannel
 from app.rag.retrieval.engine import MultiChannelRetrievalEngine
+from app.rag.retrieval.metadata import (
+    ChunkMetadataResolver,
+    MetadataEnrichmentPostProcessor,
+)
 from app.rag.retrieval.models import RetrievalBudget, SearchChannelType
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.retrieval.postprocessors import WeightedRrfFusion
+from app.rag.retrieval.scope import RetrievalScopeResolver
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
 from app.rag.rewrite.router import router as rewrite_router
 from app.rag.rewrite.term_mapping import ModelRewriteService, QueryTermMappingService
@@ -117,6 +122,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         min_score=intent_settings.min_score,
         max_total=intent_settings.max_intent_count,
     )
+    rewrite_service = ModelRewriteService(
+        model_runtime.llm,
+        query_mapping_service,
+        enabled=settings.rag.query_rewrite.enabled,
+    )
     retrieval = MultiChannelRetrievalEngine(
         [
             VectorSearchChannel(
@@ -136,12 +146,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             },
         ),
         timeout_ms=settings.rag.retrieval.timeout_ms,
-        rewriter=ModelRewriteService(
-            model_runtime.llm,
-            query_mapping_service,
-            enabled=settings.rag.query_rewrite.enabled,
-        ),
+        rewriter=rewrite_service,
         reranker=model_runtime.rerank,
+        metadata_enricher=MetadataEnrichmentPostProcessor(
+            ChunkMetadataResolver(engine)
+        ),
         trace=trace_service,
     )
     guidance_settings = settings.rag.guidance
@@ -155,6 +164,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             score_ratio=guidance_settings.ambiguity_score_ratio,
             margin=guidance_settings.ambiguity_margin,
             max_options=guidance_settings.max_options,
+            checker=ModelAmbiguityChecker(model_runtime.llm),
+        ),
+        rewriter=rewrite_service,
+        scope_resolver=RetrievalScopeResolver(
+            confidence_threshold=intent_settings.confidence_threshold
         ),
     )
 

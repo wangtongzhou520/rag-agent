@@ -36,6 +36,7 @@ from app.knowledge.models import (
     KnowledgeVector,
 )
 from app.knowledge.tasks import KnowledgeTaskHandler
+from app.rag.retrieval.metadata import ChunkMetadataResolver
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
 from app.rag.rewrite.models import QueryTermMapping
@@ -377,6 +378,14 @@ async def test_worker_ingestion_and_pgvector_retrieval(
     assert results[0].doc_id == doc_id
     assert expected in results[0].text
     assert results[0].score == pytest.approx(1.0)
+
+    metadata = await ChunkMetadataResolver(integration_engine).resolve_chunks(
+        (results[0].id,)
+    )
+    assert metadata[results[0].id].doc_id == doc_id
+    assert metadata[results[0].id].doc_name == stored_document.doc_name
+    chunk_indexes = {chunk.id: chunk.chunk_index for chunk in chunks}
+    assert metadata[results[0].id].chunk_index == chunk_indexes[results[0].id]
 
     fallback_results = await PgVectorRetrievalEngine(
         integration_engine, embedding, top_k=1

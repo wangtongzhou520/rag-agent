@@ -19,6 +19,7 @@ from app.rag.pipeline.stream_chat import (
     StreamChatPipeline,
 )
 from app.rag.retrieval.models import RetrievedChunk
+from app.rag.rewrite.models import RewriteResult
 
 
 class FakeMemory:
@@ -130,7 +131,7 @@ async def test_system_intent_streams_without_retrieval() -> None:
             return [SubQuestionIntent(rewrite_result.rewritten_question, (NodeScore(node, 0.99),))]
 
     class MustNotRetrieve:
-        async def retrieve(self, question: str):
+        async def retrieve(self, question: str, **kwargs):
             raise AssertionError("SYSTEM 意图不应进入检索")
 
     memory = FakeMemory()
@@ -163,7 +164,7 @@ async def test_mcp_intent_uses_tool_context_without_retrieval() -> None:
             return "北京晴，25℃"
 
     class MustNotRetrieve:
-        async def retrieve(self, question: str):
+        async def retrieve(self, question: str, **kwargs):
             raise AssertionError("MCP 成功后不应进入 KB 检索")
 
     llm = FakeLLM(chunks=["今天适合出行"])
@@ -186,7 +187,7 @@ async def test_mcp_intent_uses_tool_context_without_retrieval() -> None:
 
 async def test_rag_response_streams_llm_and_persists_normal() -> None:
     class NonEmptyRetrieval:
-        async def retrieve(self, question: str):
+        async def retrieve(self, question: str, **kwargs):
             return [
                 RetrievedChunk(
                     id=uuid7(),
@@ -220,7 +221,7 @@ async def test_rag_response_streams_llm_and_persists_normal() -> None:
 
 async def test_cancel_persists_partial_content_as_interrupted() -> None:
     class NonEmptyRetrieval:
-        async def retrieve(self, question: str):
+        async def retrieve(self, question: str, **kwargs):
             return [{"text": "x"}]
 
     memory = FakeMemory()
@@ -233,6 +234,48 @@ async def test_cancel_persists_partial_content_as_interrupted() -> None:
     assert memory.appended[-1][0] == "assistant"
     assert memory.appended[-1][1] == "已写"
     assert memory.appended[-1][2] == "INTERRUPTED"
+
+
+async def test_rewrite_is_shared_by_intent_and_retrieval_without_duplicate_call() -> None:
+    class Rewriter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def rewrite_with_split(self, question, history=()):
+            self.calls += 1
+            assert question == "原问题"
+            return RewriteResult("改写问题", ("子问题一", "子问题二"))
+
+    class Resolver:
+        async def resolve(self, rewrite_result):
+            assert rewrite_result == RewriteResult(
+                "改写问题", ("子问题一", "子问题二")
+            )
+            return []
+
+    class Retrieval:
+        async def retrieve(self, question, **kwargs):
+            assert question == "原问题"
+            assert kwargs["rewrite_result"] == RewriteResult(
+                "改写问题", ("子问题一", "子问题二")
+            )
+            return []
+
+    rewriter = Rewriter()
+    memory = FakeMemory()
+    pipeline = StreamChatPipeline(
+        memory,
+        FakeLLM(),
+        Retrieval(),
+        Resolver(),
+        rewriter=rewriter,
+    )
+
+    await pipeline.execute(
+        make_ctx(question="原问题"), make_handler(SseSender(), memory)
+    )
+
+    assert rewriter.calls == 1
 
 
 def test_normalize_history_crops_head_assistant_and_keeps_recent_turns() -> None:

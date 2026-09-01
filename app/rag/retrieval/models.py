@@ -12,9 +12,10 @@ class RetrievedChunk:
     id: UUID
     text: str
     score: float
-    doc_id: int
-    doc_name: str
-    source_type: str
+    doc_id: int | None = None
+    doc_name: str = ""
+    source_type: str = "unknown"
+    chunk_index: int | None = None
     file_type: str | None = None
     url: str | None = None
 
@@ -23,10 +24,14 @@ class RetrievedChunk:
         """跨通道稳定去重键；当前各存储统一使用 chunk UUID。"""
         return str(self.id)
 
+    @property
+    def document_key(self) -> str:
+        return str(self.doc_id) if self.doc_id is not None else f"chunk:{self.key}"
+
     def to_source(self, index: int) -> SourceRef:
         return SourceRef(
             index=index,
-            doc_id=str(self.doc_id),
+            doc_id=self.document_key,
             doc_name=self.doc_name,
             source_type=self.source_type,
             file_type=self.file_type,

@@ -6,6 +6,7 @@ from typing import Protocol
 
 from app.framework.logging import get_logger
 from app.framework.trace_ctx import get_trace_id
+from app.rag.retrieval.metadata import MetadataEnrichmentPostProcessor
 from app.rag.retrieval.models import (
     RetrievalBudget,
     RetrievalScope,
@@ -47,6 +48,7 @@ class MultiChannelRetrievalEngine:
         rewriter: QueryRewriter | None = None,
         reranker: Reranker | None = None,
         rerank_timeout_ms: int = 10_000,
+        metadata_enricher: MetadataEnrichmentPostProcessor | None = None,
         trace: RagTraceRecordService | None = None,
     ) -> None:
         if timeout_ms <= 0:
@@ -62,15 +64,20 @@ class MultiChannelRetrievalEngine:
             if reranker is not None
             else None
         )
+        self._metadata_enricher = metadata_enricher
         self._trace = trace
 
     async def retrieve(
-        self, question: str, *, scope: RetrievalScope | None = None
+        self,
+        question: str,
+        *,
+        scope: RetrievalScope | None = None,
+        rewrite_result: RewriteResult | None = None,
     ) -> list[RetrievedChunk]:
         started = perf_counter()
-        rewritten = question
-        sub_questions: tuple[str, ...] = ()
-        if self._rewriter is not None:
+        rewritten = rewrite_result.rewritten_question if rewrite_result else question
+        sub_questions = rewrite_result.sub_questions if rewrite_result else ()
+        if rewrite_result is None and self._rewriter is not None:
             try:
                 result = await self._rewriter.rewrite_with_split(question)
                 rewritten = result.rewritten_question or question
@@ -91,6 +98,11 @@ class MultiChannelRetrievalEngine:
             )
         else:
             final = candidates[: self._budget.context_top_k]
+        if self._metadata_enricher is not None:
+            try:
+                final = await self._metadata_enricher.process(final)
+            except Exception:
+                logger.exception("检索元数据富化失败，保留原结果")
         trace_id = get_trace_id()
         if self._trace is not None and trace_id:
             await self._trace.record_retrieval(

@@ -51,4 +51,4 @@ RAGENT_RUN_INTEGRATION=1 uv run --env-file .env pytest -m integration -q
 
 按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。
 
-当前进度：M1/M2 核心链路已落地并提供隔离的 Docker 集成验收。M3 已完成查询词映射、模型改写、意图树与管理接口、歧义引导、SYSTEM/MCP 分流、多库范围路由与补充路配额、多通道编排、超时降级、去重、加权 RRF、百炼 `qwen3-rerank`、来源引用以及 RAG Trace 记录与查询。当前实际检索通道为 pgvector；ES、LightRAG、WebSearch 仍是按需启用的可选增强项，完整元数据回表富化及意图树批量管理仍待实现。
+当前进度：M1/M2 核心链路已落地并提供隔离的 Docker 集成验收。M3 核心链路已完成，包括查询词映射与模型改写、意图树及批量管理、FAST 档歧义复核、SYSTEM/MCP 分流、多库范围路由与补充路配额、pgvector HNSW 检索、超时降级、去重、加权 RRF、百炼 `qwen3-rerank`、元数据批量回表、来源引用以及 RAG Trace。当前实际检索通道为 pgvector；ES、LightRAG、WebSearch 仍为按需启用的可选增强项。

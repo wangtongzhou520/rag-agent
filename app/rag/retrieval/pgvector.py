@@ -153,6 +153,7 @@ class PgVectorRetrievalEngine:
                 doc_id=document.id,
                 doc_name=document.doc_name,
                 source_type=document.source_type,
+                chunk_index=chunk.chunk_index,
                 file_type=document.file_type,
                 url=document.source_location,
             )

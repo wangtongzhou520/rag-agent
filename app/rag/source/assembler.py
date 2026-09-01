@@ -14,17 +14,25 @@ class AssembledSources:
 
 class SourcesAssembler:
     def assemble(self, chunks: list[RetrievedChunk]) -> AssembledSources:
-        by_doc: dict[int, RetrievedChunk] = {}
+        by_doc: dict[str, RetrievedChunk] = {}
         for chunk in chunks:
-            current = by_doc.get(chunk.doc_id)
+            key = chunk.document_key
+            current = by_doc.get(key)
             if current is None or chunk.score > current.score:
-                by_doc[chunk.doc_id] = chunk
-        ranked = sorted(by_doc.values(), key=lambda item: (-item.score, item.doc_id))
+                by_doc[key] = chunk
+        ranked = sorted(
+            by_doc.values(),
+            key=lambda item: (
+                -item.score,
+                item.doc_id is None,
+                item.doc_id if item.doc_id is not None else item.document_key,
+            ),
+        )
         indexes = {
-            str(chunk.doc_id): index
+            chunk.document_key: index
             for index, chunk in enumerate(ranked, start=1)
         }
         return AssembledSources(
-            tuple(chunk.to_source(indexes[str(chunk.doc_id)]) for chunk in ranked),
+            tuple(chunk.to_source(indexes[chunk.document_key]) for chunk in ranked),
             indexes,
         )
