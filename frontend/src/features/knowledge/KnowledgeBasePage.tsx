@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, Edit3, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Database, Edit3, FolderOpen, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 import {
@@ -125,7 +126,7 @@ export function KnowledgeBasePage() {
                   <TableHead>名称</TableHead>
                   <TableHead>Collection</TableHead>
                   <TableHead>Embedding 模型</TableHead>
-                  <TableHead className="w-[150px] text-right">操作</TableHead>
+                  <TableHead className="w-[180px] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -148,6 +149,16 @@ export function KnowledgeBasePage() {
                     <TableCell>{item.embeddingModel}</TableCell>
                     <TableCell>
                       <div className="table-actions">
+                        <Button
+                          asChild
+                          variant="ghost"
+                          className="table-icon-link"
+                          aria-label={`管理 ${item.name} 的文档`}
+                        >
+                          <Link to={`/admin/knowledge-bases/${item.id}/documents`}>
+                            <FolderOpen />
+                          </Link>
+                        </Button>
                         <button
                           type="button"
                           onClick={() => {

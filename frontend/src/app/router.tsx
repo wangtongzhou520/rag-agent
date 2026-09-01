@@ -1,9 +1,9 @@
 import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { ChatRoute } from "@/app/ChatRoute";
+import { ChunkRoute, DocumentRoute, KnowledgeBaseRoute } from "@/app/KnowledgeRoutes";
 import { HomeRedirect, RequireAdmin, RequireAuth, SessionBootstrap } from "@/app/RouteGuards";
 import { ConsoleLayout } from "@/layouts/ConsoleLayout";
-import { KnowledgeBasePage } from "@/features/knowledge/KnowledgeBasePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 
@@ -47,7 +47,9 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <Navigate to="knowledge-bases" replace /> },
-      { path: "knowledge-bases", element: <KnowledgeBasePage /> },
+      { path: "knowledge-bases", element: <KnowledgeBaseRoute /> },
+      { path: "knowledge-bases/:kbId/documents", element: <DocumentRoute /> },
+      { path: "documents/:docId/chunks", element: <ChunkRoute /> },
     ],
   },
   { path: "*", element: <NotFoundPage /> },

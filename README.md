@@ -14,9 +14,9 @@ Python 3.12+ / FastAPI / SQLAlchemy 2.0 (async) + asyncpg / pgvector / redis-py 
 
 `frontend/` React SPA 的 F0/F1 已完成：包含明亮蓝色设计系统、响应式登录页、
 REST 契约层、登录态与权限路由、SSE 六事件状态机、Markdown 回答、思考过程、
-来源定位和文档预览，以及 Vitest + MSW + Playwright 测试基线。F2 已开始建设，
-知识库列表与创建/编辑/删除管理已接入；下一批为文档与 Chunk 管理，随后接入
-意图树、查询词映射与 RAG Trace；详细规划见
+来源定位和文档预览，以及 Vitest + MSW + Playwright 测试基线。F2 已完成知识库 CRUD、
+文件/URL 文档导入、处理状态与分块触发，以及 Chunk 编辑、启停、批量操作和删除；
+下一批接入意图树、查询词映射与 RAG Trace。详细规划见
 `08-前端工程与页面设计.md`。
 
 ## 设计文档
