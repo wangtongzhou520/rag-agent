@@ -1341,10 +1341,14 @@ textarea {
   color: var(--blue-100);
   border-radius: 8px;
   font-size: 13px;
+  text-decoration: none;
 }
-.console-nav-preview:first-of-type {
+.console-nav-preview--active {
   color: white;
   background: rgb(255 255 255 / 12%);
+}
+.console-nav-preview--disabled {
+  opacity: 0.55;
 }
 .console-nav-preview svg {
   width: 17px;
@@ -1426,6 +1430,170 @@ textarea {
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.7;
+}
+.console-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+.console-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 30px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: white;
+}
+.console-toolbar form {
+  position: relative;
+  width: min(420px, 100%);
+}
+.console-toolbar form > svg {
+  position: absolute;
+  z-index: 1;
+  top: 13px;
+  left: 13px;
+  width: 16px;
+  color: var(--text-muted);
+}
+.console-toolbar form input {
+  padding-left: 40px;
+}
+.knowledge-table-panel {
+  margin-top: 16px;
+}
+.knowledge-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.knowledge-name-cell > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--blue-600);
+  background: var(--blue-50);
+}
+.knowledge-name-cell svg {
+  width: 16px;
+}
+.knowledge-name-cell > div {
+  display: grid;
+  gap: 2px;
+}
+.knowledge-name-cell strong {
+  font-size: 13px;
+}
+.knowledge-name-cell small {
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+.knowledge-table-panel code {
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--blue-800);
+  background: var(--blue-50);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+}
+.table-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.table-actions button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.table-actions button:hover {
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.table-actions button:last-child:hover {
+  color: var(--danger);
+  background: #fff2f3;
+}
+.table-actions svg {
+  width: 15px;
+}
+.console-table-state,
+.console-empty-state {
+  display: grid;
+  min-height: 350px;
+  place-content: center;
+  justify-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  background: white;
+  font-size: 13px;
+}
+.console-table-state--error,
+.console-form-error {
+  color: var(--danger);
+}
+.console-empty-state svg {
+  width: 30px;
+  margin-bottom: 14px;
+  color: var(--blue-400);
+}
+.console-empty-state strong {
+  color: var(--blue-950);
+  font-size: 15px;
+}
+.console-empty-state p {
+  margin: 7px 0 0;
+  font-size: 12px;
+}
+.console-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 4px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.console-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.console-pagination button {
+  height: 32px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+.console-form-grid {
+  display: grid;
+  gap: 17px;
+  margin-top: 24px;
+}
+.console-form-grid label {
+  display: grid;
+  gap: 7px;
+}
+.console-form-grid label > span {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+.console-form-error {
+  margin: 0;
+  font-size: 12px;
 }
 .session-loading {
   display: grid;

@@ -1,15 +1,15 @@
 import { ArrowLeft, Database, GitBranch, KeyRound, LogOut, Workflow } from "lucide-react";
-import { Link, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { useAuthStore } from "@/features/auth/store";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/ui/Button";
 
-const nextModules = [
-  [Database, "知识库管理", "F2"],
-  [GitBranch, "意图树", "F2"],
-  [KeyRound, "查询词映射", "F2"],
-  [Workflow, "链路追踪", "F2"],
+const modules = [
+  [Database, "知识库管理", "/admin/knowledge-bases", "READY"],
+  [GitBranch, "意图树", "", "NEXT"],
+  [KeyRound, "查询词映射", "", "NEXT"],
+  [Workflow, "链路追踪", "", "NEXT"],
 ] as const;
 
 export function ConsoleLayout() {
@@ -19,14 +19,28 @@ export function ConsoleLayout() {
       <aside className="console-sidebar">
         <BrandMark className="[&_strong]:text-white [&_span_span]:text-blue-100" />
         <nav aria-label="控制台模块">
-          <p>即将接入</p>
-          {nextModules.map(([Icon, label, phase]) => (
-            <span className="console-nav-preview" key={label}>
-              <Icon aria-hidden="true" />
-              <span>{label}</span>
-              <small>{phase}</small>
-            </span>
-          ))}
+          <p>管理模块</p>
+          {modules.map(([Icon, label, target, phase]) =>
+            target.startsWith("/") ? (
+              <NavLink
+                className={({ isActive }) =>
+                  `console-nav-preview${isActive ? " console-nav-preview--active" : ""}`
+                }
+                key={label}
+                to={target}
+              >
+                <Icon aria-hidden="true" />
+                <span>{label}</span>
+                <small>{phase}</small>
+              </NavLink>
+            ) : (
+              <span className="console-nav-preview console-nav-preview--disabled" key={label}>
+                <Icon aria-hidden="true" />
+                <span>{label}</span>
+                <small>{phase}</small>
+              </span>
+            ),
+          )}
         </nav>
       </aside>
       <div className="console-main">

@@ -1,9 +1,9 @@
-import { createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { ChatRoute } from "@/app/ChatRoute";
 import { HomeRedirect, RequireAdmin, RequireAuth, SessionBootstrap } from "@/app/RouteGuards";
 import { ConsoleLayout } from "@/layouts/ConsoleLayout";
-import { AdminFoundationPage } from "@/pages/AdminFoundationPage";
+import { KnowledgeBasePage } from "@/features/knowledge/KnowledgeBasePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 
@@ -45,7 +45,10 @@ export const router = createBrowserRouter([
         </RequireAuth>
       </SessionBootstrap>
     ),
-    children: [{ index: true, element: <AdminFoundationPage /> }],
+    children: [
+      { index: true, element: <Navigate to="knowledge-bases" replace /> },
+      { path: "knowledge-bases", element: <KnowledgeBasePage /> },
+    ],
   },
   { path: "*", element: <NotFoundPage /> },
 ]);
