@@ -12,9 +12,10 @@ Python 3.12+ / FastAPI / SQLAlchemy 2.0 (async) + asyncpg / pgvector / redis-py 
 
 ## 前端状态
 
-当前仓库仅包含后端 API、Worker、MCP 服务骨架和设计文档，**尚无前端页面工程**。
-前端将在当前仓库新建 `frontend/` React SPA，以蓝色作为主视觉，分阶段建设智能问答与
-RAG 管理控制台；工程、页面、契约和验收规划详见 `08-前端工程与页面设计.md`。
+`frontend/` React SPA 的 F0 工程底座已完成：包含明亮蓝色设计系统、响应式登录页、
+问答/管理工作区骨架、REST 契约层、登录态恢复、用户/管理员路由守卫以及
+Vitest + MSW + Playwright 测试基线。下一阶段 F1 将接入完整 SSE 问答状态机、Markdown
+回答、思考过程、来源引用和文档预览；详细规划见 `08-前端工程与页面设计.md`。
 
 ## 设计文档
 
@@ -39,6 +40,16 @@ uv run --env-file .env python -m app.worker              # 启动 PG 队列 work
 uv run python -m mcp_server.main               # 启动 MCP 工具服务（:9099）
 uv run pytest -q                               # 测试
 uv run ruff check .                            # Lint
+```
+
+前端开发与质量检查：
+
+```bash
+cd frontend
+npm install
+npm run dev                                    # http://127.0.0.1:5173
+npm run lint && npm run typecheck && npm run test && npm run build
+npm run e2e                                    # 首次运行需 npx playwright install chromium
 ```
 
 本地 PostgreSQL/pgvector 与 Redis 容器启动后，可运行不调用外部模型的 M1/M2
