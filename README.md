@@ -13,8 +13,8 @@ Python 3.12+ / FastAPI / SQLAlchemy 2.0 (async) + asyncpg / pgvector / redis-py 
 ## 前端状态
 
 当前仓库仅包含后端 API、Worker、MCP 服务骨架和设计文档，**尚无前端页面工程**。
-登录、聊天、知识库管理、文档处理状态和系统管理页面需要单独建设；现有 REST 与
-SSE 契约用于后续前端直接对接。
+前端将在当前仓库新建 `frontend/` React SPA，以蓝色作为主视觉，分阶段建设智能问答与
+RAG 管理控制台；工程、页面、契约和验收规划详见 `08-前端工程与页面设计.md`。
 
 ## 设计文档
 
@@ -28,6 +28,7 @@ SSE 契约用于后续前端直接对接。
 | [05-流量保护与韧性设计](docs/05-流量保护与韧性设计.md) | Redis 公平排队、Lua 原子 claim、取消广播、幂等、自研 PG 队列可靠性 |
 | [06-MCP 工具体系](docs/06-MCP工具体系.md) | MCP server/client、工具注册、LLM 提参与三态结局 |
 | [07-系统管理与可观测](docs/07-系统管理与可观测.md) | 认证授权、审计、RAG Trace、Dashboard、agents 人设与 Prompt 槽位 |
+| [08-前端工程与页面设计](docs/08-前端工程与页面设计.md) | React 工程、蓝色视觉体系、页面规划、REST/SSE 联调、测试与分期 |
 
 ## 开发命令
 
