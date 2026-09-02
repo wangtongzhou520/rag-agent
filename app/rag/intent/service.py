@@ -16,7 +16,9 @@ class IntentTreeService:
         self._cache = cache
 
     async def list_tree(self) -> list[IntentNode]:
-        return await DefaultIntentClassifier(None, engine=self._engine, cache=self._cache).load_intent_tree()
+        return await DefaultIntentClassifier(
+            None, engine=self._engine, cache=self._cache
+        ).load_intent_tree(include_disabled=True)
 
     async def create(self, data: dict, user_id: int) -> int:
         self._validate(data)
@@ -31,7 +33,11 @@ class IntentTreeService:
     async def update(self, node_id: int, data: dict, user_id: int) -> None:
         self._validate(data)
         async with self._sessions.begin() as session:
-            row = await session.scalar(select(IntentNodeRecord).where(IntentNodeRecord.id == node_id, IntentNodeRecord.deleted == 0))
+            row = await session.scalar(
+                select(IntentNodeRecord).where(
+                    IntentNodeRecord.id == node_id, IntentNodeRecord.deleted == 0
+                )
+            )
             if row is None:
                 raise ValueError("意图节点不存在")
             for key, value in self._record_data(data).items():
@@ -41,7 +47,11 @@ class IntentTreeService:
 
     async def delete(self, node_id: int) -> None:
         async with self._sessions.begin() as session:
-            row = await session.scalar(select(IntentNodeRecord).where(IntentNodeRecord.id == node_id, IntentNodeRecord.deleted == 0))
+            row = await session.scalar(
+                select(IntentNodeRecord).where(
+                    IntentNodeRecord.id == node_id, IntentNodeRecord.deleted == 0
+                )
+            )
             if row is None:
                 raise ValueError("意图节点不存在")
             row.deleted = 1
@@ -78,4 +88,18 @@ class IntentTreeService:
 
     @staticmethod
     def _record_data(data: dict) -> dict:
-        return {"kb_id": data.get("kb_id"), "intent_code": data["intent_code"].strip(), "name": data["name"].strip(), "level": data.get("level", 0), "parent_code": data.get("parent_code"), "description": data.get("description"), "examples": data.get("examples", []), "collection_name": data.get("collection_name"), "collection_names": data.get("collection_names", []), "kind": data.get("kind", 0), "mcp_tool_id": data.get("mcp_tool_id"), "top_k": data.get("top_k"), "enabled": int(data.get("enabled", True))}
+        return {
+            "kb_id": data.get("kb_id"),
+            "intent_code": data["intent_code"].strip(),
+            "name": data["name"].strip(),
+            "level": data.get("level", 0),
+            "parent_code": data.get("parent_code"),
+            "description": data.get("description"),
+            "examples": data.get("examples", []),
+            "collection_name": data.get("collection_name"),
+            "collection_names": data.get("collection_names", []),
+            "kind": data.get("kind", 0),
+            "mcp_tool_id": data.get("mcp_tool_id"),
+            "top_k": data.get("top_k"),
+            "enabled": int(data.get("enabled", True)),
+        }

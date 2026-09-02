@@ -5,7 +5,6 @@ import { toast } from "sonner";
 
 import { useAuthStore } from "@/features/auth/store";
 import { BrandMark } from "@/shared/components/BrandMark";
-import { RagSignalRail } from "@/shared/components/RagSignalRail";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
 
@@ -41,21 +40,13 @@ export function LoginPage() {
         <div className="login-brand-panel__grid" aria-hidden="true" />
         <BrandMark className="relative z-10 [&_strong]:text-white [&_span_span]:text-blue-100" />
         <div className="login-brand-copy">
-          <p className="login-eyebrow">AGENTIC RAG WORKSPACE</p>
-          <h1>
-            <span>让知识沿着</span>
-            <span>清晰路径，抵达答案。</span>
-          </h1>
-          <p>从问题理解、检索重排到来源引用，每一步都有迹可循。</p>
-        </div>
-        <div className="login-signal-card">
-          <div className="login-signal-card__header">
-            <span>RAG 信号轨</span>
-            <span className="login-live">
-              <i /> SYSTEM READY
-            </span>
-          </div>
-          <RagSignalRail active={3} />
+          <p className="login-eyebrow">Ragent 工作台</p>
+          <h1>知识检索与问答，在一个工作区完成。</h1>
+          <ul className="login-capabilities">
+            <li>知识库与文档管理</li>
+            <li>意图配置与检索控制</li>
+            <li>回答来源与运行链路</li>
+          </ul>
         </div>
       </section>
 

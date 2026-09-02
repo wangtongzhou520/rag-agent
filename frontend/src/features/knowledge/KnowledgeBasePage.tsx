@@ -77,7 +77,7 @@ export function KnowledgeBasePage() {
     <main className="console-content knowledge-page">
       <header className="console-page-header">
         <div className="console-page-heading">
-          <p>KNOWLEDGE OPERATIONS / F2</p>
+          <p>知识管理</p>
           <h1>知识库</h1>
           <span>管理检索边界、向量集合与 Embedding 模型。</span>
         </div>

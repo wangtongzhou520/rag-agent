@@ -17,16 +17,23 @@ logger = get_logger(__name__)
 
 
 class DefaultIntentClassifier:
-    def __init__(self, llm, *, engine: AsyncEngine | None = None, cache: IntentTreeCacheManager | None = None, min_score: float = 0.6) -> None:
+    def __init__(
+        self,
+        llm,
+        *,
+        engine: AsyncEngine | None = None,
+        cache: IntentTreeCacheManager | None = None,
+        min_score: float = 0.6,
+    ) -> None:
         self._llm = llm
         self._sessions = async_sessionmaker(engine, expire_on_commit=False) if engine else None
         self._cache = cache
         self._min_score = min_score
 
-    async def load_intent_tree(self) -> list[IntentNode]:
+    async def load_intent_tree(self, *, include_disabled: bool = False) -> list[IntentNode]:
         if self._sessions is None:
             return []
-        if self._cache:
+        if self._cache and not include_disabled:
             try:
                 cached = await self._cache.get()
                 if cached is not None:
@@ -35,28 +42,62 @@ class DefaultIntentClassifier:
                 logger.exception("意图树缓存读取失败")
         try:
             async with self._sessions() as session:
-                rows = (await session.scalars(select(IntentNodeRecord).where(IntentNodeRecord.deleted == 0, IntentNodeRecord.enabled == 1).order_by(IntentNodeRecord.level, IntentNodeRecord.id))).all()
+                filters = [IntentNodeRecord.deleted == 0]
+                if not include_disabled:
+                    filters.append(IntentNodeRecord.enabled == 1)
+                rows = (
+                    await session.scalars(
+                        select(IntentNodeRecord)
+                        .where(*filters)
+                        .order_by(IntentNodeRecord.level, IntentNodeRecord.id)
+                    )
+                ).all()
             roots = self._build_tree([self._to_domain(row) for row in rows])
-            if self._cache:
+            if self._cache and not include_disabled:
                 await self._cache.put(roots)
             return roots
         except Exception:
             logger.exception("意图树加载失败")
             return []
 
-    async def classify(self, question: str, tree: list[IntentNode] | None = None) -> list[NodeScore]:
-        nodes = [node for root in (tree if tree is not None else await self.load_intent_tree()) for node in self._leaves(root)]
+    async def classify(
+        self, question: str, tree: list[IntentNode] | None = None
+    ) -> list[NodeScore]:
+        nodes = [
+            node
+            for root in (tree if tree is not None else await self.load_intent_tree())
+            for node in self._leaves(root)
+        ]
         if not nodes:
             return []
-        blocks = "\n".join(f"- id={node.id}\n  path={node.full_path or node.name}\n  description={node.description}\n  kind={node.kind}\n  examples={' / '.join(node.examples)}" for node in nodes)
-        prompt = f"候选意图：\n{blocks}\n\n问题：{question}\n只输出 JSON 数组：[{{\"id\":1,\"score\":0.9,\"reason\":\"...\"}}]"
+        blocks = "\n".join(
+            f"- id={node.id}\n  path={node.full_path or node.name}\n  description={node.description}\n  kind={node.kind}\n  examples={' / '.join(node.examples)}"
+            for node in nodes
+        )
+        prompt = f'候选意图：\n{blocks}\n\n问题：{question}\n只输出 JSON 数组：[{{"id":1,"score":0.9,"reason":"..."}}]'
         try:
-            raw = await self._llm.chat(ChatRequest(messages=[ChatMessage(role=ChatRole.SYSTEM, content="你是意图分类器，只选择最匹配的候选意图。"), ChatMessage(role=ChatRole.USER, content=prompt)], temperature=0.1, top_p=0.3), tier=Tier.STANDARD)
+            raw = await self._llm.chat(
+                ChatRequest(
+                    messages=[
+                        ChatMessage(
+                            role=ChatRole.SYSTEM, content="你是意图分类器，只选择最匹配的候选意图。"
+                        ),
+                        ChatMessage(role=ChatRole.USER, content=prompt),
+                    ],
+                    temperature=0.1,
+                    top_p=0.3,
+                ),
+                tier=Tier.STANDARD,
+            )
             values = json.loads(self._strip_fence(raw))
             if isinstance(values, dict):
                 values = values.get("results", [])
             by_id = {node.id: node for node in nodes}
-            scores = [NodeScore(by_id[int(item["id"])], float(item["score"]), str(item.get("reason", ""))) for item in values if int(item.get("id")) in by_id and float(item.get("score", 0)) >= self._min_score]
+            scores = [
+                NodeScore(by_id[int(item["id"])], float(item["score"]), str(item.get("reason", "")))
+                for item in values
+                if int(item.get("id")) in by_id and float(item.get("score", 0)) >= self._min_score
+            ]
             return sorted(scores, key=lambda item: item.score, reverse=True)
         except Exception:
             logger.exception("意图分类失败")
@@ -72,10 +113,12 @@ class DefaultIntentClassifier:
                 roots.append(node)
             else:
                 parent.children.append(node)
+
         def fill(node: IntentNode, prefix: str = "") -> None:
             node.full_path = f"{prefix} > {node.name}" if prefix else node.name
             for child in node.children:
                 fill(child, node.full_path)
+
         for root in roots:
             fill(root)
         return roots
@@ -89,7 +132,22 @@ class DefaultIntentClassifier:
 
     @staticmethod
     def _to_domain(row: IntentNodeRecord) -> IntentNode:
-        return IntentNode(id=row.id, intent_code=row.intent_code, name=row.name, level=row.level, kind=row.kind, description=row.description or "", examples=tuple(row.examples or ()), parent_code=row.parent_code, collection_name=row.collection_name, collection_names=tuple(row.collection_names or ()), mcp_tool_id=row.mcp_tool_id, top_k=row.top_k)
+        return IntentNode(
+            id=row.id,
+            intent_code=row.intent_code,
+            name=row.name,
+            level=row.level,
+            kind=row.kind,
+            description=row.description or "",
+            examples=tuple(row.examples or ()),
+            parent_code=row.parent_code,
+            collection_name=row.collection_name,
+            collection_names=tuple(row.collection_names or ()),
+            mcp_tool_id=row.mcp_tool_id,
+            top_k=row.top_k,
+            kb_id=row.kb_id,
+            enabled=bool(row.enabled),
+        )
 
     @staticmethod
     def _strip_fence(value: str) -> str:

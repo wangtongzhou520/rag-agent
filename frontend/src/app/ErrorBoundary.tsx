@@ -20,7 +20,7 @@ export class ErrorBoundary extends Component<PropsWithChildren, ErrorBoundarySta
 
     return (
       <main className="fatal-error">
-        <p className="foundation-eyebrow">APPLICATION RECOVERY</p>
+        <p className="foundation-eyebrow">页面恢复</p>
         <h1>页面暂时无法显示</h1>
         <p>应用遇到了未处理的异常。刷新后会重新恢复登录状态与当前工作区。</p>
         <button type="button" onClick={() => window.location.reload()}>

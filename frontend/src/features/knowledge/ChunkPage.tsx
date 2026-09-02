@@ -125,14 +125,14 @@ export function ChunkPage() {
       </Link>
       <header className="console-page-header chunk-page-header">
         <div className="console-page-heading">
-          <p>DOCUMENT / {documentQuery.data ? `DOC ${documentQuery.data.id}` : rawDocId}</p>
+          <p>文档 / {documentQuery.data ? `编号 ${documentQuery.data.id}` : rawDocId}</p>
           <h1>{documentQuery.data?.docName || "Chunk 管理"}</h1>
           <span>校正分块内容和检索可见性。编辑保存时会调用 Embedding 模型重新向量化。</span>
         </div>
         <div className="chunk-total">
           <Boxes aria-hidden="true" />
           <span>
-            <strong>{query.data?.total || 0}</strong> CHUNKS
+            <strong>{query.data?.total || 0}</strong> 个分块
           </span>
         </div>
       </header>
@@ -215,7 +215,7 @@ export function ChunkPage() {
                 />
               </label>
               <div className="chunk-card__index">
-                <span>CHUNK</span>
+                <span>分块</span>
                 <strong>{String(item.chunkIndex).padStart(3, "0")}</strong>
               </div>
               <div className="chunk-card__content">
@@ -337,7 +337,7 @@ function ChunkEditDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <span className="dialog-kicker">
-              <Edit3 aria-hidden="true" /> CHUNK EDITOR
+              <Edit3 aria-hidden="true" /> 内容编辑
             </span>
             <DialogTitle>编辑 Chunk {chunk?.chunkIndex}</DialogTitle>
             <DialogDescription>

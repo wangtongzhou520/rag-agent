@@ -32,7 +32,7 @@ export function SourcePanel({
     <aside className={cn("source-panel", open && "source-panel--open")} aria-label="回答来源">
       <header>
         <div>
-          <span>SOURCE CONTEXT</span>
+          <span>参考来源</span>
           <h2>回答来源</h2>
         </div>
         <button type="button" onClick={onClose} aria-label="关闭来源面板">

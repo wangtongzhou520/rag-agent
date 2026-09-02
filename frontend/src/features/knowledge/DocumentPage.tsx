@@ -143,7 +143,7 @@ export function DocumentPage() {
       </Link>
       <header className="console-page-header">
         <div className="console-page-heading">
-          <p>KNOWLEDGE / {baseQuery.data?.name || `KB ${kbId}`}</p>
+          <p>知识库 / {baseQuery.data?.name || `编号 ${kbId}`}</p>
           <h1>文档管理</h1>
           <span>导入材料、观察处理状态，并控制进入检索链路的内容。</span>
         </div>
@@ -152,25 +152,9 @@ export function DocumentPage() {
         </Button>
       </header>
 
-      <section className="document-flow-note">
-        <span>01</span>
-        <div>
-          <strong>创建文档</strong>
-          <small>文件或 URL</small>
-        </div>
-        <i />
-        <span>02</span>
-        <div>
-          <strong>启动分块</strong>
-          <small>显式确认</small>
-        </div>
-        <i />
-        <span>03</span>
-        <div>
-          <strong>进入检索</strong>
-          <small>状态 success</small>
-        </div>
-      </section>
+      <p className="document-process-hint">
+        文档导入后需要手动开始分块；处理状态变为“已完成”后，内容才会进入检索。
+      </p>
 
       <section className="console-toolbar document-toolbar">
         <form onSubmit={submitSearch}>
@@ -241,7 +225,7 @@ export function DocumentPage() {
                         <FileText aria-hidden="true" />
                         <div>
                           <strong>{item.docName}</strong>
-                          <small>DOC {item.id}</small>
+                          <small>文档编号 {item.id}</small>
                         </div>
                       </div>
                     </TableCell>

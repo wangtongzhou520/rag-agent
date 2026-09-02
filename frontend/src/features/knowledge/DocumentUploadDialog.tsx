@@ -134,7 +134,7 @@ export function DocumentUploadDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <span className="dialog-kicker">
-              <UploadCloud aria-hidden="true" /> INGEST DOCUMENT
+              <UploadCloud aria-hidden="true" /> 文档入库
             </span>
             <DialogTitle>导入知识文档</DialogTitle>
             <DialogDescription>

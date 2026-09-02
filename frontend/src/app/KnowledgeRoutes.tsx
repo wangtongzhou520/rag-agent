@@ -13,6 +13,11 @@ const DocumentPage = lazy(() =>
 const ChunkPage = lazy(() =>
   import("@/features/knowledge/ChunkPage").then((module) => ({ default: module.ChunkPage })),
 );
+const IntentTreePage = lazy(() =>
+  import("@/features/intent/IntentTreePage").then((module) => ({
+    default: module.IntentTreePage,
+  })),
+);
 
 function KnowledgeRoute({ Page, label }: { Page: ComponentType; label: string }) {
   return (
@@ -39,4 +44,8 @@ export function DocumentRoute() {
 
 export function ChunkRoute() {
   return <KnowledgeRoute Page={ChunkPage} label="Chunk 工作台" />;
+}
+
+export function IntentTreeRoute() {
+  return <KnowledgeRoute Page={IntentTreePage} label="意图树" />;
 }

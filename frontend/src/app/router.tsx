@@ -1,7 +1,12 @@
 import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { ChatRoute } from "@/app/ChatRoute";
-import { ChunkRoute, DocumentRoute, KnowledgeBaseRoute } from "@/app/KnowledgeRoutes";
+import {
+  ChunkRoute,
+  DocumentRoute,
+  IntentTreeRoute,
+  KnowledgeBaseRoute,
+} from "@/app/KnowledgeRoutes";
 import { HomeRedirect, RequireAdmin, RequireAuth, SessionBootstrap } from "@/app/RouteGuards";
 import { ConsoleLayout } from "@/layouts/ConsoleLayout";
 import { LoginPage } from "@/pages/LoginPage";
@@ -50,6 +55,7 @@ export const router = createBrowserRouter([
       { path: "knowledge-bases", element: <KnowledgeBaseRoute /> },
       { path: "knowledge-bases/:kbId/documents", element: <DocumentRoute /> },
       { path: "documents/:docId/chunks", element: <ChunkRoute /> },
+      { path: "intent-tree", element: <IntentTreeRoute /> },
     ],
   },
   { path: "*", element: <NotFoundPage /> },

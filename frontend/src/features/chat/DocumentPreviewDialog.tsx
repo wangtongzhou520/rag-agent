@@ -51,7 +51,7 @@ export function DocumentPreviewDialog({
       <DialogContent className="document-preview-dialog">
         <DialogHeader>
           <span className="document-preview-dialog__kicker">
-            <FileText aria-hidden="true" /> DOCUMENT PREVIEW
+            <FileText aria-hidden="true" /> 文档预览
           </span>
           <DialogTitle>{source?.docName || "文档预览"}</DialogTitle>
           <DialogDescription>

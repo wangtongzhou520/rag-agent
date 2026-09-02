@@ -32,6 +32,8 @@ class IntentNode:
     top_k: int | None = None
     children: list["IntentNode"] = field(default_factory=list)
     full_path: str = ""
+    kb_id: int | None = None
+    enabled: bool = True
 
     def is_leaf(self) -> bool:
         return not self.children

@@ -114,7 +114,7 @@ export function ChatPage() {
           新对话
         </button>
         <nav aria-label="当前工作区">
-          <p>WORKSPACE</p>
+          <p>工作区</p>
           <span className="chat-nav-item chat-nav-item--active">
             <BrainCircuit aria-hidden="true" />
             智能问答
@@ -176,7 +176,7 @@ export function ChatPage() {
             <Menu aria-hidden="true" />
           </button>
           <div>
-            <span>RAG WORKSPACE</span>
+            <span>知识问答</span>
             <strong>{title}</strong>
           </div>
           <div className={cn("stream-status", `stream-status--${stream.phase}`)}>
@@ -196,7 +196,7 @@ export function ChatPage() {
         <div className="chat-scroll-region">
           {turns.length === 0 ? (
             <section className="chat-empty-state">
-              <p>AGENTIC ANSWER PATH</p>
+              <p>基于知识库回答</p>
               <h1>
                 让问题进入一条
                 <span>可观察的知识路径。</span>

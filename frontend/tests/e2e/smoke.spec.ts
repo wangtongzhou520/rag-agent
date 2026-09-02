@@ -1,11 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+import type { IntentNode, IntentNodeWrite } from "@/features/intent/types";
+
 const result = <T>(data: T) => ({ code: "0", message: "ok", data });
 
 test("renders the blue login foundation", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "登录 Ragent AI" })).toBeVisible();
-  await expect(page.getByText("RAG 信号轨", { exact: true })).toBeVisible();
+  await expect(page.getByText("知识库与文档管理", { exact: true })).toBeVisible();
 });
 
 test("streams an answer and opens its source context", async ({ page }) => {
@@ -275,4 +277,156 @@ test("imports documents and manages chunks", async ({ page }, testInfo) => {
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.getByText("更新后的混合检索说明。")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("chunk-workbench.png"), fullPage: true });
+});
+
+test("manages the intent tree including disabled nodes", async ({ page }, testInfo) => {
+  const roots: IntentNode[] = [
+    {
+      id: 1,
+      intentCode: "product",
+      name: "产品",
+      level: 0,
+      kind: 0,
+      description: "产品相关问题",
+      examples: [],
+      collectionNames: [],
+      enabled: true,
+      fullPath: "产品",
+      children: [
+        {
+          id: 2,
+          intentCode: "product.guide",
+          name: "使用指南",
+          level: 1,
+          parentCode: "product",
+          kind: 0,
+          description: "产品使用与配置",
+          examples: [],
+          collectionNames: [],
+          enabled: true,
+          fullPath: "产品 > 使用指南",
+          children: [
+            {
+              id: 3,
+              intentCode: "product.guide.install",
+              name: "安装说明",
+              level: 2,
+              parentCode: "product.guide",
+              kind: 0,
+              description: "安装与部署问题",
+              examples: ["如何安装？"],
+              collectionName: "product_docs",
+              collectionNames: ["product_docs"],
+              enabled: false,
+              fullPath: "产品 > 使用指南 > 安装说明",
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+  const flatten = (nodes: IntentNode[]): IntentNode[] =>
+    nodes.flatMap((node) => [node, ...flatten(node.children)]);
+
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/knowledge-base?*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(
+        result({
+          records: [
+            {
+              id: 1,
+              name: "产品知识库",
+              collectionName: "product_docs",
+              embeddingModel: "qwen3.7-text-embedding",
+            },
+          ],
+          total: 1,
+          current: 1,
+          size: 100,
+        }),
+      ),
+    }),
+  );
+  await page.route("**/api/ragent/intent-tree**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "GET") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result(roots)),
+      });
+    }
+    if (request.method() === "POST" && path.endsWith("/intent-tree")) {
+      const body = request.postDataJSON() as IntentNodeWrite;
+      const parent = flatten(roots).find((node) => node.intentCode === body.parentCode);
+      const created: IntentNode = {
+        ...body,
+        id: 4,
+        fullPath: `${parent?.fullPath} > ${body.name}`,
+        children: [],
+      };
+      parent?.children.push(created);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result("4")) });
+    }
+    if (request.method() === "PUT") {
+      const id = Number(path.split("/").pop());
+      const target = flatten(roots).find((node) => node.id === id);
+      if (target) {
+        Object.assign(target, request.postDataJSON());
+        const parent = flatten(roots).find((node) => node.intentCode === target.parentCode);
+        target.fullPath = parent ? `${parent.fullPath} > ${target.name}` : target.name;
+      }
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    if (request.method() === "POST" && path.includes("/batch/")) {
+      const ids = (request.postDataJSON() as { ids: number[] }).ids;
+      const enabled = path.endsWith("/enable");
+      flatten(roots)
+        .filter((node) => ids.includes(node.id))
+        .forEach((node) => {
+          node.enabled = enabled;
+        });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+  });
+
+  await page.goto("/admin/intent-tree");
+  await expect(page.getByRole("heading", { name: "意图树" })).toBeVisible();
+  await page.getByRole("button", { name: "展开 使用指南" }).click();
+  await page.getByRole("treeitem").filter({ hasText: "安装说明" }).click();
+  await expect(page.getByText("已停用", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "启用节点" }).click();
+  await expect(page.getByText("已停用")).toHaveCount(0);
+
+  await page.getByRole("treeitem").filter({ hasText: "使用指南" }).click();
+  await page.getByRole("button", { name: "新建子节点" }).click();
+  await page.getByLabel("节点名称").fill("常见问题");
+  await page.getByLabel("意图编码").fill("product.guide.faq");
+  await page.getByText("产品知识库").click();
+  await page.getByLabel("示例问题").fill("如何解决常见故障？");
+  await page.getByRole("button", { name: "添加" }).click();
+  await page.getByRole("button", { name: "保存节点" }).click();
+  await expect(page.getByRole("treeitem").filter({ hasText: "常见问题" })).toBeVisible();
+
+  await page.getByRole("treeitem").filter({ hasText: "常见问题" }).click();
+  await page.getByRole("button", { name: "编辑 常见问题" }).click();
+  await expect(page.getByLabel("意图编码")).toHaveValue("product.guide.faq");
+  await page.getByLabel("节点名称").fill("故障排查");
+  await page.getByRole("button", { name: "保存节点" }).click();
+  await expect(page.getByRole("treeitem").filter({ hasText: "故障排查" })).toBeVisible();
+  await page.getByRole("checkbox", { name: "选择 故障排查" }).check();
+  await page.getByRole("button", { name: "停用", exact: true }).click();
+  await expect(page.getByText("已停用", { exact: true })).toBeVisible();
+  await expect(page.getByText("已停用 1 个节点")).toBeHidden({ timeout: 6_000 });
+  await page.screenshot({ path: testInfo.outputPath("intent-tree.png"), fullPage: true });
 });
