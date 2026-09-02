@@ -17,7 +17,7 @@ from app.knowledge.schemas import (
     KnowledgeBaseUpdate,
 )
 from app.knowledge.service import KnowledgeService
-from app.system.auth.deps import require_user
+from app.system.auth.deps import require_admin, require_user
 from app.system.auth.models import LoginUser
 
 router = APIRouter(
@@ -26,23 +26,25 @@ router = APIRouter(
     dependencies=[Depends(require_user)],
 )
 
+ADMIN_ONLY = [Depends(require_admin)]
+
 
 def _service(request: Request) -> KnowledgeService:
     return request.app.state.knowledge_service
 
 
-@router.post("")
+@router.post("", dependencies=ADMIN_ONLY)
 async def create_base(
     body: KnowledgeBaseCreate,
     request: Request,
-    user: Annotated[LoginUser, Depends(require_user)],
+    user: Annotated[LoginUser, Depends(require_admin)],
 ) -> dict:
-    return Results.success(
-        await _service(request).create_base(body, user.user_id)
-    ).model_dump(by_alias=True)
+    return Results.success(await _service(request).create_base(body, user.user_id)).model_dump(
+        by_alias=True
+    )
 
 
-@router.get("")
+@router.get("", dependencies=ADMIN_ONLY)
 async def list_bases(
     request: Request,
     current: int = 1,
@@ -53,7 +55,7 @@ async def list_bases(
     return Results.success(data).model_dump(by_alias=True)
 
 
-@router.get("/docs/ingestion-spec-schema")
+@router.get("/docs/ingestion-spec-schema", dependencies=ADMIN_ONLY)
 async def ingestion_spec_schema() -> dict:
     data = {
         "version": 2,
@@ -68,25 +70,19 @@ async def ingestion_spec_schema() -> dict:
     return Results.success(data).model_dump(by_alias=True)
 
 
-@router.get("/docs/search")
-async def search_documents(
-    request: Request, keyword: str | None = None, limit: int = 8
-) -> dict:
+@router.get("/docs/search", dependencies=ADMIN_ONLY)
+async def search_documents(request: Request, keyword: str | None = None, limit: int = 8) -> dict:
     data = await _service(request).search_documents(keyword, limit)
     return Results.success(data).model_dump(by_alias=True)
 
 
-@router.get("/docs/{doc_id}")
+@router.get("/docs/{doc_id}", dependencies=ADMIN_ONLY)
 async def get_document(doc_id: int, request: Request) -> dict:
-    return Results.success(
-        await _service(request).get_document(doc_id)
-    ).model_dump(by_alias=True)
+    return Results.success(await _service(request).get_document(doc_id)).model_dump(by_alias=True)
 
 
-@router.put("/docs/{doc_id}")
-async def update_document(
-    doc_id: int, body: DocumentUpdate, request: Request
-) -> dict:
+@router.put("/docs/{doc_id}", dependencies=ADMIN_ONLY)
+async def update_document(doc_id: int, body: DocumentUpdate, request: Request) -> dict:
     await _service(request).update_document(
         doc_id,
         doc_name=body.doc_name,
@@ -98,9 +94,9 @@ async def update_document(
 
 @router.get("/docs/{doc_id}/preview")
 async def preview_document(doc_id: int, request: Request) -> dict:
-    return Results.success(
-        await _service(request).preview_document(doc_id)
-    ).model_dump(by_alias=True)
+    return Results.success(await _service(request).preview_document(doc_id)).model_dump(
+        by_alias=True
+    )
 
 
 @router.get("/docs/{doc_id}/file")
@@ -111,11 +107,11 @@ async def document_file(doc_id: int, request: Request) -> FileResponse:
     return FileResponse(path, filename=filename, content_disposition_type="inline")
 
 
-@router.post("/{kb_id}/docs/upload")
+@router.post("/{kb_id}/docs/upload", dependencies=ADMIN_ONLY)
 async def upload_document(
     kb_id: int,
     request: Request,
-    user: Annotated[LoginUser, Depends(require_user)],
+    user: Annotated[LoginUser, Depends(require_admin)],
     file: Annotated[UploadFile | None, File()] = None,
     source_type: Annotated[str, Form(alias="sourceType")] = "file",
     source_location: Annotated[str | None, Form(alias="sourceLocation")] = None,
@@ -138,17 +134,17 @@ async def upload_document(
     return Results.success(document).model_dump(by_alias=True)
 
 
-@router.post("/docs/{doc_id}/chunk")
+@router.post("/docs/{doc_id}/chunk", dependencies=ADMIN_ONLY)
 async def trigger_chunk(
     doc_id: int,
     request: Request,
-    user: Annotated[LoginUser, Depends(require_user)],
+    user: Annotated[LoginUser, Depends(require_admin)],
 ) -> dict:
     await _service(request).trigger_chunk(doc_id, user.user_id)
     return Results.success().model_dump(by_alias=True)
 
 
-@router.get("/{kb_id}/docs")
+@router.get("/{kb_id}/docs", dependencies=ADMIN_ONLY)
 async def list_documents(
     kb_id: int,
     request: Request,
@@ -157,27 +153,23 @@ async def list_documents(
     status: str | None = None,
     keyword: str | None = None,
 ) -> dict:
-    data = await _service(request).list_documents(
-        kb_id, current, size, status, keyword
-    )
+    data = await _service(request).list_documents(kb_id, current, size, status, keyword)
     return Results.success(data).model_dump(by_alias=True)
 
 
-@router.patch("/docs/{doc_id}/enable")
-async def enable_document(
-    doc_id: int, request: Request, value: Annotated[bool, Query()]
-) -> dict:
+@router.patch("/docs/{doc_id}/enable", dependencies=ADMIN_ONLY)
+async def enable_document(doc_id: int, request: Request, value: Annotated[bool, Query()]) -> dict:
     await _service(request).set_document_enabled(doc_id, value)
     return Results.success().model_dump(by_alias=True)
 
 
-@router.delete("/docs/{doc_id}")
+@router.delete("/docs/{doc_id}", dependencies=ADMIN_ONLY)
 async def delete_document(doc_id: int, request: Request) -> dict:
     await _service(request).delete_document(doc_id)
     return Results.success().model_dump(by_alias=True)
 
 
-@router.get("/docs/{doc_id}/chunks")
+@router.get("/docs/{doc_id}/chunks", dependencies=ADMIN_ONLY)
 async def list_chunks(
     doc_id: int,
     request: Request,
@@ -189,7 +181,7 @@ async def list_chunks(
     return Results.success(data).model_dump(by_alias=True)
 
 
-@router.patch("/docs/{doc_id}/chunks/{chunk_id}/enable")
+@router.patch("/docs/{doc_id}/chunks/{chunk_id}/enable", dependencies=ADMIN_ONLY)
 async def enable_chunk(
     doc_id: int,
     chunk_id: uuid.UUID,
@@ -200,7 +192,7 @@ async def enable_chunk(
     return Results.success().model_dump(by_alias=True)
 
 
-@router.patch("/docs/{doc_id}/chunks/batch-enable")
+@router.patch("/docs/{doc_id}/chunks/batch-enable", dependencies=ADMIN_ONLY)
 async def batch_enable_chunks(
     doc_id: int,
     body: BatchEnable,
@@ -211,7 +203,7 @@ async def batch_enable_chunks(
     return Results.success().model_dump(by_alias=True)
 
 
-@router.put("/docs/{doc_id}/chunks/{chunk_id}")
+@router.put("/docs/{doc_id}/chunks/{chunk_id}", dependencies=ADMIN_ONLY)
 async def update_chunk(
     doc_id: int,
     chunk_id: uuid.UUID,
@@ -222,37 +214,33 @@ async def update_chunk(
     return Results.success().model_dump(by_alias=True)
 
 
-@router.delete("/docs/{doc_id}/chunks/{chunk_id}")
-async def delete_chunk(
-    doc_id: int, chunk_id: uuid.UUID, request: Request
-) -> dict:
+@router.delete("/docs/{doc_id}/chunks/{chunk_id}", dependencies=ADMIN_ONLY)
+async def delete_chunk(doc_id: int, chunk_id: uuid.UUID, request: Request) -> dict:
     await _service(request).delete_chunk(chunk_id)
     return Results.success().model_dump(by_alias=True)
 
 
-@router.get("/{kb_id}")
+@router.get("/{kb_id}", dependencies=ADMIN_ONLY)
 async def get_base(kb_id: int, request: Request) -> dict:
-    return Results.success(
-        await _service(request).get_base(kb_id)
-    ).model_dump(by_alias=True)
+    return Results.success(await _service(request).get_base(kb_id)).model_dump(by_alias=True)
 
 
-@router.put("/{kb_id}")
+@router.put("/{kb_id}", dependencies=ADMIN_ONLY)
 async def update_base(
     kb_id: int,
     body: KnowledgeBaseUpdate,
     request: Request,
-    user: Annotated[LoginUser, Depends(require_user)],
+    user: Annotated[LoginUser, Depends(require_admin)],
 ) -> dict:
     await _service(request).update_base(kb_id, body, user.user_id)
     return Results.success().model_dump(by_alias=True)
 
 
-@router.delete("/{kb_id}")
+@router.delete("/{kb_id}", dependencies=ADMIN_ONLY)
 async def delete_base(
     kb_id: int,
     request: Request,
-    user: Annotated[LoginUser, Depends(require_user)],
+    user: Annotated[LoginUser, Depends(require_admin)],
 ) -> dict:
     await _service(request).delete_base(kb_id, user.user_id)
     return Results.success().model_dump(by_alias=True)

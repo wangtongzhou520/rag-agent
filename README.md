@@ -16,8 +16,8 @@ Python 3.12+ / FastAPI / SQLAlchemy 2.0 (async) + asyncpg / pgvector / redis-py 
 REST 契约层、登录态与权限路由、SSE 六事件状态机、Markdown 回答、思考过程、
 来源定位和文档预览，以及 Vitest + MSW + Playwright 测试基线。F2 已完成知识库 CRUD、
 文件/URL 文档导入、处理状态与分块触发、Chunk 管理、意图树 CRUD 与批量操作，以及
-查询词映射 CRUD、RAG Trace 列表与运行节点详情。下一批补齐管理 API 的服务端管理员
-权限守卫，并继续处理 F3 会话产品化所需的后端接口。详细规划见
+查询词映射 CRUD、RAG Trace 列表与运行节点详情；相关管理 API 已补齐服务端管理员权限
+守卫。下一批完成控制台全局搜索，随后处理 F3 会话产品化所需的后端接口。详细规划见
 `08-前端工程与页面设计.md`。
 
 ## 设计文档

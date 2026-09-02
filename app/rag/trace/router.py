@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from app.framework.result import Results
 from app.rag.trace.query import RagTraceQueryService
-from app.system.auth.deps import require_user
+from app.system.auth.deps import require_admin
 
 router = APIRouter(
     prefix="/rag/traces",
     tags=["trace"],
-    dependencies=[Depends(require_user)],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -40,13 +40,9 @@ async def page_runs(
 
 @router.get("/runs/{trace_id}")
 async def detail(trace_id: str, request: Request) -> dict:
-    return Results.success(await _service(request).detail(trace_id)).model_dump(
-        by_alias=True
-    )
+    return Results.success(await _service(request).detail(trace_id)).model_dump(by_alias=True)
 
 
 @router.get("/runs/{trace_id}/nodes")
 async def nodes(trace_id: str, request: Request) -> dict:
-    return Results.success(await _service(request).nodes(trace_id)).model_dump(
-        by_alias=True
-    )
+    return Results.success(await _service(request).nodes(trace_id)).model_dump(by_alias=True)
