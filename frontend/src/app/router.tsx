@@ -6,6 +6,7 @@ import {
   DocumentRoute,
   IntentTreeRoute,
   KnowledgeBaseRoute,
+  MappingRoute,
 } from "@/app/KnowledgeRoutes";
 import { HomeRedirect, RequireAdmin, RequireAuth, SessionBootstrap } from "@/app/RouteGuards";
 import { ConsoleLayout } from "@/layouts/ConsoleLayout";
@@ -56,6 +57,7 @@ export const router = createBrowserRouter([
       { path: "knowledge-bases/:kbId/documents", element: <DocumentRoute /> },
       { path: "documents/:docId/chunks", element: <ChunkRoute /> },
       { path: "intent-tree", element: <IntentTreeRoute /> },
+      { path: "mappings", element: <MappingRoute /> },
     ],
   },
   { path: "*", element: <NotFoundPage /> },

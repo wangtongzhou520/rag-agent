@@ -18,6 +18,11 @@ const IntentTreePage = lazy(() =>
     default: module.IntentTreePage,
   })),
 );
+const MappingPage = lazy(() =>
+  import("@/features/mapping/MappingPage").then((module) => ({
+    default: module.MappingPage,
+  })),
+);
 
 function KnowledgeRoute({ Page, label }: { Page: ComponentType; label: string }) {
   return (
@@ -48,4 +53,8 @@ export function ChunkRoute() {
 
 export function IntentTreeRoute() {
   return <KnowledgeRoute Page={IntentTreePage} label="意图树" />;
+}
+
+export function MappingRoute() {
+  return <KnowledgeRoute Page={MappingPage} label="查询词映射" />;
 }

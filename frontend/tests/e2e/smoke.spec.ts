@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import type { IntentNode, IntentNodeWrite } from "@/features/intent/types";
+import type { QueryTermMapping, QueryTermMappingWrite } from "@/features/mapping/types";
 
 const result = <T>(data: T) => ({ code: "0", message: "ok", data });
 
@@ -429,4 +430,95 @@ test("manages the intent tree including disabled nodes", async ({ page }, testIn
   await expect(page.getByText("已停用", { exact: true })).toBeVisible();
   await expect(page.getByText("已停用 1 个节点")).toBeHidden({ timeout: 6_000 });
   await page.screenshot({ path: testInfo.outputPath("intent-tree.png"), fullPage: true });
+});
+
+test("manages query term mappings and keeps search in the URL", async ({ page }, testInfo) => {
+  const records: QueryTermMapping[] = [
+    {
+      id: 1,
+      sourceTerm: "AI 助理",
+      targetTerm: "智能助手",
+      matchType: 1,
+      priority: 100,
+      enabled: true,
+      domain: "产品文档",
+      remark: "统一产品名称",
+    },
+  ];
+
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/mappings**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname;
+    if (request.method() === "GET") {
+      const keyword = url.searchParams.get("keyword") || "";
+      const filtered = records.filter(
+        (item) => item.sourceTerm.includes(keyword) || item.targetTerm.includes(keyword),
+      );
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({ records: filtered, total: filtered.length, current: 1, size: 20 }),
+        ),
+      });
+    }
+    if (request.method() === "POST") {
+      records.push({ ...(request.postDataJSON() as QueryTermMappingWrite), id: 2 });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result("2")) });
+    }
+    if (request.method() === "PUT") {
+      const id = Number(path.split("/").pop());
+      const target = records.find((item) => item.id === id);
+      if (target) Object.assign(target, request.postDataJSON());
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    if (request.method() === "DELETE") {
+      const id = Number(path.split("/").pop());
+      records.splice(
+        records.findIndex((item) => item.id === id),
+        1,
+      );
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    return route.abort();
+  });
+
+  await page.goto("/admin/mappings");
+  await expect(page.getByRole("heading", { name: "查询词映射" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "AI 助理" })).toBeVisible();
+
+  await page.getByRole("button", { name: "新建映射" }).click();
+  await page.getByLabel("原始词").fill("RAG 助手");
+  await page.getByLabel("标准词").fill("Ragent AI");
+  await page.getByLabel("所属领域").fill("技术支持");
+  await page.getByLabel("备注").fill("客户常用称呼");
+  await page.getByRole("button", { name: "保存映射" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "RAG 助手" })).toBeVisible();
+
+  await page.getByRole("button", { name: "编辑 RAG 助手" }).click();
+  await page.getByLabel("标准词").fill("Ragent 平台");
+  await page.getByRole("button", { name: "保存映射" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "Ragent 平台" })).toBeVisible();
+
+  await page.getByRole("button", { name: "停用 RAG 助手" }).click();
+  await expect(page.getByRole("button", { name: "启用 RAG 助手" })).toBeVisible();
+
+  await page.getByLabel("搜索查询词映射").fill("RAG");
+  await page.getByLabel("搜索查询词映射").press("Enter");
+  await expect(page).toHaveURL(/keyword=RAG/);
+  await expect(page.getByRole("row").filter({ hasText: "RAG 助手" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "AI 助理" })).toHaveCount(0);
+  await expect(page.getByText("已停用“RAG 助手”")).toBeHidden({ timeout: 6_000 });
+  await page.screenshot({ path: testInfo.outputPath("query-term-mappings.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "删除 RAG 助手" }).click();
+  await page.getByRole("button", { name: "确认删除" }).click();
+  await expect(page.getByText("RAG 助手")).toHaveCount(0);
 });
