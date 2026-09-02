@@ -1,6 +1,7 @@
 """RAG Trace 查询服务。"""
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
@@ -103,9 +104,15 @@ class RagTraceQueryService:
             "errorMessage": row.error_message,
             "durationMs": row.duration_ms,
             "question": (row.extra_data or {}).get("question"),
-            "startTime": row.start_time.isoformat(),
-            "endTime": row.end_time.isoformat() if row.end_time else None,
+            "startTime": RagTraceQueryService._epoch_millis(row.start_time),
+            "endTime": RagTraceQueryService._epoch_millis(row.end_time) if row.end_time else None,
         }
+
+    @staticmethod
+    def _epoch_millis(value: datetime) -> int:
+        """数据库存储 UTC 无时区时间，对外统一为 Unix 毫秒时间戳。"""
+        aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+        return int(aware.timestamp() * 1000)
 
     @staticmethod
     def _node(row: RagTraceNode) -> dict:

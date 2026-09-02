@@ -1,4 +1,4 @@
-import { ArrowLeft, Database, GitBranch, LogOut, Replace } from "lucide-react";
+import { Activity, ArrowLeft, Database, GitBranch, LogOut, Replace } from "lucide-react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { useAuthStore } from "@/features/auth/store";
@@ -9,6 +9,7 @@ const modules = [
   [Database, "知识库管理", "/admin/knowledge-bases"],
   [GitBranch, "意图树", "/admin/intent-tree"],
   [Replace, "查询词映射", "/admin/mappings"],
+  [Activity, "RAG Trace", "/admin/traces"],
 ] as const;
 
 export function ConsoleLayout() {

@@ -7,6 +7,8 @@ import {
   IntentTreeRoute,
   KnowledgeBaseRoute,
   MappingRoute,
+  TraceDetailRoute,
+  TraceListRoute,
 } from "@/app/KnowledgeRoutes";
 import { HomeRedirect, RequireAdmin, RequireAuth, SessionBootstrap } from "@/app/RouteGuards";
 import { ConsoleLayout } from "@/layouts/ConsoleLayout";
@@ -58,6 +60,8 @@ export const router = createBrowserRouter([
       { path: "documents/:docId/chunks", element: <ChunkRoute /> },
       { path: "intent-tree", element: <IntentTreeRoute /> },
       { path: "mappings", element: <MappingRoute /> },
+      { path: "traces", element: <TraceListRoute /> },
+      { path: "traces/:traceId", element: <TraceDetailRoute /> },
     ],
   },
   { path: "*", element: <NotFoundPage /> },

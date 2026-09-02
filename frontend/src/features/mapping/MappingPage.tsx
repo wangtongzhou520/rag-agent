@@ -256,6 +256,7 @@ export function MappingPage() {
       </section>
 
       <MappingDialog
+        key={formOpen ? `mapping-${editing?.id ?? "new"}` : "mapping-closed"}
         open={formOpen}
         current={editing}
         busy={save.isPending}

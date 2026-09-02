@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import type { IntentNode, IntentNodeWrite } from "@/features/intent/types";
 import type { QueryTermMapping, QueryTermMappingWrite } from "@/features/mapping/types";
+import type { RagTraceDetail, RagTraceRun } from "@/features/trace/types";
 
 const result = <T>(data: T) => ({ code: "0", message: "ok", data });
 
@@ -521,4 +522,113 @@ test("manages query term mappings and keeps search in the URL", async ({ page },
   await page.getByRole("button", { name: "删除 RAG 助手" }).click();
   await page.getByRole("button", { name: "确认删除" }).click();
   await expect(page.getByText("RAG 助手")).toHaveCount(0);
+});
+
+test("filters trace runs and inspects node output", async ({ page }, testInfo) => {
+  const traceId = "01994111-1111-7111-8111-111111111111";
+  const taskId = "01994222-2222-7222-8222-222222222222";
+  const run: RagTraceRun = {
+    traceId,
+    traceName: "rag-stream-chat",
+    entryPoint: "app.rag.pipeline.StreamChatPipeline.execute",
+    conversationId: "01994333-3333-7333-8333-333333333333",
+    taskId,
+    userId: 1,
+    status: "SUCCESS",
+    durationMs: 1_480,
+    question: "当前检索流程在哪一步耗时最多？",
+    startTime: Date.parse("2026-09-02T12:30:00.000Z"),
+    endTime: Date.parse("2026-09-02T12:30:01.480Z"),
+  };
+  const failedRun: RagTraceRun = {
+    ...run,
+    traceId: "01994444-4444-7444-8444-444444444444",
+    taskId: "01994555-5555-7555-8555-555555555555",
+    status: "ERROR",
+    durationMs: 690,
+    question: "查询失败的知识内容",
+    errorMessage: "模型服务暂时不可用",
+  };
+  const detail: RagTraceDetail = {
+    run,
+    nodes: [
+      {
+        nodeId: "01994666-6666-7666-8666-666666666666",
+        nodeType: "REWRITE",
+        nodeName: "query-rewrite",
+        status: "SUCCESS",
+        durationMs: 84,
+        extraData: { rewrittenQuestion: "检索流程耗时分析" },
+      },
+      {
+        nodeId: "01994777-7777-7777-8777-777777777777",
+        nodeType: "RETRIEVE",
+        nodeName: "retrieval-engine",
+        status: "SUCCESS",
+        durationMs: 620,
+        extraData: {
+          vectorCandidates: 12,
+          finalChunkIds: ["chunk-01", "chunk-02"],
+          channels: { vector: "SUCCESS", keyword: "DISABLED" },
+        },
+      },
+      {
+        nodeId: "01994888-8888-7888-8888-888888888888",
+        nodeType: "RERANK",
+        nodeName: "qwen3-rerank",
+        status: "SUCCESS",
+        durationMs: 410,
+        extraData: { inputCount: 12, outputCount: 5 },
+      },
+    ],
+  };
+
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/rag/traces/runs**", (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path.endsWith(`/runs/${traceId}`)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result(detail)),
+      });
+    }
+    const records = [run, failedRun].filter(
+      (item) =>
+        (!url.searchParams.get("status") || item.status === url.searchParams.get("status")) &&
+        (!url.searchParams.get("taskId") || item.taskId === url.searchParams.get("taskId")),
+    );
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ records, total: records.length, current: 1, size: 20 })),
+    });
+  });
+
+  await page.goto("/admin/traces");
+  await expect(page.getByRole("heading", { name: "RAG Trace" })).toBeVisible();
+  await expect(page.getByText("当前检索流程在哪一步耗时最多？")).toBeVisible();
+  await expect(page.getByText("查询失败的知识内容")).toBeVisible();
+
+  await page.getByLabel("运行状态").selectOption("SUCCESS");
+  await page.getByLabel("任务 ID").fill(taskId);
+  await page.getByRole("button", { name: "查询" }).click();
+  await expect(page).toHaveURL(/status=SUCCESS/);
+  await expect(page).toHaveURL(new RegExp(`taskId=${taskId}`));
+  await expect(page.getByText("查询失败的知识内容")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("trace-list.png"), fullPage: true });
+
+  await page.getByRole("link", { name: `查看 Trace ${traceId}` }).click();
+  await expect(page.getByRole("heading", { name: "当前检索流程在哪一步耗时最多？" })).toBeVisible();
+  await expect(page.getByText("retrieval-engine")).toBeVisible();
+  await page.getByRole("button", { name: /retrieval-engine/ }).click();
+  await expect(page.getByText(/vectorCandidates/)).toBeVisible();
+  await expect(page.getByText(/finalChunkIds/)).toBeVisible();
+  await expect(page.getByText("最慢")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("trace-detail.png"), fullPage: true });
 });

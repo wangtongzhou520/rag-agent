@@ -23,6 +23,16 @@ const MappingPage = lazy(() =>
     default: module.MappingPage,
   })),
 );
+const TraceListPage = lazy(() =>
+  import("@/features/trace/TraceListPage").then((module) => ({
+    default: module.TraceListPage,
+  })),
+);
+const TraceDetailPage = lazy(() =>
+  import("@/features/trace/TraceDetailPage").then((module) => ({
+    default: module.TraceDetailPage,
+  })),
+);
 
 function KnowledgeRoute({ Page, label }: { Page: ComponentType; label: string }) {
   return (
@@ -57,4 +67,12 @@ export function IntentTreeRoute() {
 
 export function MappingRoute() {
   return <KnowledgeRoute Page={MappingPage} label="查询词映射" />;
+}
+
+export function TraceListRoute() {
+  return <KnowledgeRoute Page={TraceListPage} label="RAG Trace" />;
+}
+
+export function TraceDetailRoute() {
+  return <KnowledgeRoute Page={TraceDetailPage} label="Trace 详情" />;
 }
