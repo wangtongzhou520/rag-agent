@@ -2,6 +2,7 @@ import { Activity, ArrowLeft, Database, GitBranch, LogOut, Replace } from "lucid
 import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { useAuthStore } from "@/features/auth/store";
+import { ConsoleGlobalSearch } from "@/features/knowledge/ConsoleGlobalSearch";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/ui/Button";
 
@@ -42,7 +43,8 @@ export function ConsoleLayout() {
               返回问答
             </Link>
           </Button>
-          <div className="flex items-center gap-3 text-sm text-muted">
+          <ConsoleGlobalSearch />
+          <div className="console-user-actions">
             <span>{user?.username}</span>
             <Button aria-label="退出登录" onClick={() => void logout()} variant="ghost">
               <LogOut className="h-4 w-4" />

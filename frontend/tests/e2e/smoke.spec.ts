@@ -119,6 +119,95 @@ test("manages knowledge bases through the admin console", async ({ page }) => {
   await expect(page.getByText("研发资料库")).toHaveCount(0);
 });
 
+test("searches the admin console and opens results with keyboard or pointer", async ({
+  page,
+}, testInfo) => {
+  const base = {
+    id: 1,
+    name: "产品知识库",
+    collectionName: "product_docs",
+    embeddingModel: "qwen3.7-text-embedding",
+  };
+  const document = {
+    id: 11,
+    kbId: 1,
+    docName: "产品指南.md",
+    enabled: true,
+    chunkCount: 2,
+    fileType: "md",
+    mimeType: "text/markdown",
+    fileSize: 2048,
+    status: "success",
+    sourceType: "file",
+    ingestionSpec: null,
+  };
+
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/knowledge-base**", (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path.endsWith("/knowledge-base/docs/search")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result([document])),
+      });
+    }
+    if (path.endsWith("/knowledge-base/1/docs")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result({ records: [document], total: 1, current: 1, size: 20 })),
+      });
+    }
+    if (path.endsWith("/knowledge-base/docs/11/chunks")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result({ records: [], total: 0, current: 1, size: 20 })),
+      });
+    }
+    if (path.endsWith("/knowledge-base/docs/11")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result(document)),
+      });
+    }
+    if (path.endsWith("/knowledge-base/1")) {
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(base)) });
+    }
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ records: [base], total: 1, current: 1, size: 5 })),
+    });
+  });
+
+  await page.goto("/admin/knowledge-bases");
+  const search = page.getByRole("combobox", { name: "全局搜索" });
+  await search.fill("产品");
+  await expect(page.getByRole("option", { name: /产品知识库/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /产品指南\.md/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("console-global-search.png") });
+
+  await search.press("ArrowDown");
+  await expect(page.getByRole("option", { name: /产品知识库/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await search.press("Enter");
+  await expect(page).toHaveURL(/\/admin\/knowledge-bases\/1\/documents$/);
+
+  const isMac = await page.evaluate(() => navigator.platform.toLowerCase().includes("mac"));
+  await page.keyboard.press(isMac ? "Meta+k" : "Control+k");
+  await expect(search).toBeFocused();
+  await search.fill("指南");
+  await page.getByRole("option", { name: /产品指南\.md/ }).click();
+  await expect(page).toHaveURL(/\/admin\/documents\/11\/chunks$/);
+});
+
 test("imports documents and manages chunks", async ({ page }, testInfo) => {
   const documents = [
     {

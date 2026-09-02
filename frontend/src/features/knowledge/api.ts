@@ -41,6 +41,14 @@ export function getIngestionSpecSchema() {
   });
 }
 
+export function searchDocuments(keyword: string, limit = 6) {
+  return request<KnowledgeDocument[]>({
+    method: "GET",
+    url: "/knowledge-base/docs/search",
+    params: { keyword, limit },
+  });
+}
+
 export async function listDocuments(
   kbId: number,
   current: number,
