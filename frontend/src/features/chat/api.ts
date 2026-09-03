@@ -5,6 +5,7 @@ import type {
   ChatStreamEvent,
   ConversationMessage,
   ConversationSummary,
+  RecommendedQuestionsResult,
 } from "@/features/chat/types";
 
 export interface StreamChatInput {
@@ -46,6 +47,28 @@ export function stopChat(taskId: string) {
     method: "POST",
     url: "/rag/v3/stop",
     params: { taskId },
+  });
+}
+
+export function submitMessageFeedback(messageId: string, vote: 1 | -1) {
+  return request<null>({
+    method: "POST",
+    url: `/conversations/messages/${messageId}/feedback`,
+    data: { vote },
+  });
+}
+
+export function deleteMessageFeedback(messageId: string) {
+  return request<null>({
+    method: "DELETE",
+    url: `/conversations/messages/${messageId}/feedback`,
+  });
+}
+
+export function generateRecommendedQuestions(messageId: string) {
+  return request<RecommendedQuestionsResult>({
+    method: "POST",
+    url: `/conversations/messages/${messageId}/recommended-questions`,
   });
 }
 

@@ -1,7 +1,13 @@
 import { create } from "zustand";
 
 import { useAuthStore } from "@/features/auth/store";
-import { stopChat, streamChat } from "@/features/chat/api";
+import {
+  deleteMessageFeedback,
+  generateRecommendedQuestions,
+  stopChat,
+  streamChat,
+  submitMessageFeedback,
+} from "@/features/chat/api";
 import {
   abortStream,
   createStreamSnapshot,
@@ -30,6 +36,8 @@ interface ChatState {
   setTitle: (title: string) => void;
   send: (question: string) => Promise<void>;
   stop: () => Promise<void>;
+  voteMessage: (messageId: string, vote: 1 | -1) => Promise<void>;
+  loadRecommendations: (messageId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -58,6 +66,7 @@ function updateAssistant(turns: ChatTurn[], snapshot: StreamSnapshot): ChatTurn[
     thinking: snapshot.thinking,
     sources: snapshot.sources,
     messageStatus: snapshot.messageStatus,
+    persisted: Boolean(snapshot.messageId) || next[index].persisted,
     error: snapshot.error,
     streaming: ["connecting", "streaming", "finishing"].includes(snapshot.phase),
   };
@@ -72,7 +81,20 @@ function historyTurns(messages: ConversationMessage[]): ChatTurn[] {
     thinking: message.thinkingContent || undefined,
     sources: message.sources || undefined,
     messageStatus: message.messageStatus,
+    vote: message.vote,
+    recommendedQuestions: message.recommendedQuestions,
+    recommendationStatus:
+      message.recommendedQuestions == null
+        ? undefined
+        : message.recommendedQuestions.length
+          ? "SUCCESS"
+          : "EMPTY",
+    persisted: true,
   }));
+}
+
+function updateTurn(turns: ChatTurn[], messageId: string, patch: Partial<ChatTurn>): ChatTurn[] {
+  return turns.map((turn) => (turn.id === messageId ? { ...turn, ...patch } : turn));
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -194,6 +216,66 @@ export const useChatStore = create<ChatState>((set, get) => ({
         turns: updateAssistant(state.turns, stream),
       };
     });
+  },
+  voteMessage: async (messageId, vote) => {
+    const turn = get().turns.find((item) => item.id === messageId);
+    if (!turn || turn.role !== "assistant" || !turn.persisted || turn.feedbackPending) return;
+    const previousVote = turn.vote ?? null;
+    const nextVote = previousVote === vote ? null : vote;
+    set((state) => ({
+      turns: updateTurn(state.turns, messageId, {
+        vote: nextVote,
+        feedbackPending: true,
+        actionError: undefined,
+      }),
+    }));
+    try {
+      if (nextVote === null) await deleteMessageFeedback(messageId);
+      else await submitMessageFeedback(messageId, nextVote);
+    } catch (error) {
+      set((state) => ({
+        turns: updateTurn(state.turns, messageId, {
+          vote: previousVote,
+          actionError: error instanceof Error ? error.message : "反馈提交失败",
+        }),
+      }));
+    } finally {
+      set((state) => ({
+        turns: updateTurn(state.turns, messageId, { feedbackPending: false }),
+      }));
+    }
+  },
+  loadRecommendations: async (messageId) => {
+    const turn = get().turns.find((item) => item.id === messageId);
+    if (!turn || turn.role !== "assistant" || !turn.persisted || turn.recommendationPending) return;
+    set((state) => ({
+      turns: updateTurn(state.turns, messageId, {
+        recommendationPending: true,
+        actionError: undefined,
+      }),
+    }));
+    try {
+      const result = await generateRecommendedQuestions(messageId);
+      set((state) => ({
+        turns: updateTurn(state.turns, messageId, {
+          recommendedQuestions: result.status === "FAILED" ? null : result.questions,
+          recommendationStatus: result.status,
+          actionError:
+            result.status === "FAILED" ? "暂时无法生成后续问题，请稍后重试。" : undefined,
+        }),
+      }));
+    } catch (error) {
+      set((state) => ({
+        turns: updateTurn(state.turns, messageId, {
+          recommendationStatus: "FAILED",
+          actionError: error instanceof Error ? error.message : "推荐问题生成失败",
+        }),
+      }));
+    } finally {
+      set((state) => ({
+        turns: updateTurn(state.turns, messageId, { recommendationPending: false }),
+      }));
+    }
   },
   reset: () => {
     activeController?.abort();

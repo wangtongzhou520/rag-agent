@@ -43,6 +43,7 @@ class FakeMemory:
         thinking_content=None,
         thinking_duration=None,
         sources=None,
+        retrieved_chunks=None,
         message_status="NORMAL",
         reply_to_message_id=None,
     ):

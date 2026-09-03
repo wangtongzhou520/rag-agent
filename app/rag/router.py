@@ -14,7 +14,9 @@ from app.framework.result import Results
 from app.framework.sse import SseSender
 from app.framework.stream_tasks import StreamTaskManager
 from app.rag.conversation import ConversationService
-from app.rag.schemas import ConversationTitleUpdate
+from app.rag.feedback import MessageFeedbackService
+from app.rag.recommend import RecommendedQuestionService
+from app.rag.schemas import ConversationTitleUpdate, MessageFeedbackWrite
 from app.rag.service import RAGChatService
 from app.system.auth.deps import require_user
 from app.system.auth.models import LoginUser
@@ -29,6 +31,14 @@ conversation_router = APIRouter(
 
 def _conversation_service(request: Request) -> ConversationService:
     return request.app.state.conversation_service
+
+
+def _feedback_service(request: Request) -> MessageFeedbackService:
+    return request.app.state.message_feedback_service
+
+
+def _recommend_service(request: Request) -> RecommendedQuestionService:
+    return request.app.state.recommended_question_service
 
 
 @conversation_router.get("")
@@ -68,6 +78,43 @@ async def list_conversation_messages(
     user: Annotated[LoginUser, Depends(require_user)],
 ) -> dict:
     data = await _conversation_service(request).list_messages(conversation_id, user.user_id)
+    return Results.success(data).model_dump(by_alias=True)
+
+
+@conversation_router.post("/messages/{message_id}/feedback")
+async def submit_message_feedback(
+    message_id: str,
+    body: MessageFeedbackWrite,
+    request: Request,
+    user: Annotated[LoginUser, Depends(require_user)],
+) -> dict:
+    await _feedback_service(request).submit(
+        message_id,
+        user.user_id,
+        body.vote,
+        body.reason,
+        body.comment,
+    )
+    return Results.success().model_dump(by_alias=True)
+
+
+@conversation_router.delete("/messages/{message_id}/feedback")
+async def delete_message_feedback(
+    message_id: str,
+    request: Request,
+    user: Annotated[LoginUser, Depends(require_user)],
+) -> dict:
+    await _feedback_service(request).remove(message_id, user.user_id)
+    return Results.success().model_dump(by_alias=True)
+
+
+@conversation_router.post("/messages/{message_id}/recommended-questions")
+async def generate_recommended_questions(
+    message_id: str,
+    request: Request,
+    user: Annotated[LoginUser, Depends(require_user)],
+) -> dict:
+    data = await _recommend_service(request).generate(message_id, user.user_id)
     return Results.success(data).model_dump(by_alias=True)
 
 

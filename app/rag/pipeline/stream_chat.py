@@ -172,6 +172,12 @@ class StreamChatPipeline:
         typed_chunks = [chunk for chunk in chunks if isinstance(chunk, RetrievedChunk)]
         assembled = SourcesAssembler().assemble(typed_chunks)
         await callback.on_sources(list(assembled.sources))
+        await callback.on_grounding_chunks(
+            [
+                {"docName": chunk.doc_name, "text": chunk.text}
+                for chunk in typed_chunks
+            ]
+        )
         raw_context = "\n\n".join(
             (
                 '<content data-ragent-doc-id="'

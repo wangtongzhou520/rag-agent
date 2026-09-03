@@ -86,6 +86,15 @@ class ConversationService:
                 )
                 .values(deleted=1)
             )
+            await session.execute(
+                update(MessageFeedback)
+                .where(
+                    MessageFeedback.conversation_id == parsed_id,
+                    MessageFeedback.user_id == user_id,
+                    MessageFeedback.deleted == 0,
+                )
+                .values(deleted=1)
+            )
 
     async def list_messages(self, conversation_id: str, user_id: int) -> list[dict]:
         parsed_id = self._parse_id(conversation_id)

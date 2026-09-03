@@ -1113,6 +1113,117 @@ textarea {
 .answer-sources-link svg {
   width: 14px;
 }
+.answer-followup {
+  margin-top: 20px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+.answer-tools {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.answer-tools > span {
+  margin-right: 3px;
+}
+.answer-tools button {
+  display: inline-flex;
+  min-width: 29px;
+  height: 29px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+  transition: 140ms ease-out;
+}
+.answer-tools button:hover:not(:disabled) {
+  border-color: var(--blue-200);
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.answer-tools button.is-active {
+  border-color: var(--blue-200);
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.answer-tools button.is-negative.is-active {
+  border-color: rgb(223 75 85 / 22%);
+  color: #b23a43;
+  background: #fff7f7;
+}
+.answer-tools button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.answer-tools button svg {
+  width: 14px;
+  height: 14px;
+}
+.answer-tools .answer-tools__recommend {
+  width: auto;
+  margin-left: auto;
+  padding-inline: 9px;
+  border-color: var(--border);
+}
+.recommended-questions {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+.recommended-questions > span {
+  color: var(--blue-700);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.recommended-questions button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--blue-100);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: rgb(239 246 255 / 55%);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition: 140ms ease-out;
+}
+.recommended-questions button:hover {
+  border-color: var(--blue-300);
+  color: var(--blue-800);
+  background: var(--blue-50);
+  transform: translateX(2px);
+}
+.recommended-questions button svg {
+  width: 13px;
+  flex: 0 0 auto;
+  transform: rotate(45deg);
+}
+.answer-action-note {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.answer-action-note--error {
+  color: #a43a43;
+}
+.is-spinning {
+  animation: spin 900ms linear infinite;
+}
 .chat-composer-shell {
   position: relative;
   z-index: 4;

@@ -32,6 +32,7 @@ from app.knowledge.router import router as knowledge_router
 from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
 from app.rag.conversation import ConversationService
+from app.rag.feedback import MessageFeedbackService
 from app.rag.intent.cache import IntentTreeCacheManager
 from app.rag.intent.classifier import DefaultIntentClassifier
 from app.rag.intent.guidance import IntentGuidanceService, ModelAmbiguityChecker
@@ -41,6 +42,7 @@ from app.rag.intent.service import IntentTreeService
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.memory.store import ConversationMemoryStore
 from app.rag.pipeline.stream_chat import StreamChatPipeline
+from app.rag.recommend import RecommendedQuestionGenerator, RecommendedQuestionService
 from app.rag.retrieval.channels import VectorSearchChannel
 from app.rag.retrieval.engine import MultiChannelRetrievalEngine
 from app.rag.retrieval.metadata import (
@@ -194,6 +196,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.stream_task_manager = stream_task_manager
     app.state.conversation_service = ConversationService(
         engine, title_max_length=settings.rag.memory.title_max_length
+    )
+    app.state.message_feedback_service = MessageFeedbackService(engine)
+    app.state.recommended_question_service = RecommendedQuestionService(
+        engine, RecommendedQuestionGenerator(model_runtime.llm), trace_service
     )
     app.state.knowledge_service = KnowledgeService(
         engine,

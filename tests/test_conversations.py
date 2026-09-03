@@ -58,6 +58,34 @@ class FakeConversationService:
         self.calls.append(("delete", conversation_id, user_id))
 
 
+class FakeFeedbackService:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    async def submit(self, message_id, user_id, vote, reason=None, comment=None):
+        self.calls.append(("submit", message_id, user_id, vote, reason, comment))
+
+    async def remove(self, message_id, user_id):
+        self.calls.append(("remove", message_id, user_id))
+
+
+class FakeRecommendService:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    async def generate(self, message_id, user_id):
+        from app.framework.sse import (
+            RecommendedQuestionsPayload,
+            RecommendedQuestionStatus,
+        )
+
+        self.calls.append((message_id, user_id))
+        return RecommendedQuestionsPayload(
+            status=RecommendedQuestionStatus.SUCCESS,
+            questions=["下一步如何配置？"],
+        )
+
+
 async def test_conversation_routes_preserve_contract_and_current_user(client: AsyncClient) -> None:
     service = FakeConversationService()
     conversation_id = "01999111-1111-7111-8111-111111111111"
@@ -95,6 +123,45 @@ async def test_conversation_routes_preserve_contract_and_current_user(client: As
         ("rename", conversation_id, 42, "新的会话标题"),
         ("delete", conversation_id, 42),
     ]
+
+
+async def test_feedback_and_recommendation_routes_use_current_user(client: AsyncClient) -> None:
+    feedback = FakeFeedbackService()
+    recommend = FakeRecommendService()
+
+    async def current_user() -> LoginUser:
+        return LoginUser(userId=42, username="reader", role="USER")
+
+    original_feedback = app.state.message_feedback_service
+    original_recommend = app.state.recommended_question_service
+    app.state.message_feedback_service = feedback
+    app.state.recommended_question_service = recommend
+    app.dependency_overrides[require_user] = current_user
+    try:
+        submitted = await client.post(
+            "/conversations/messages/message-1/feedback",
+            json={"vote": -1, "reason": "不准确", "comment": "缺少来源"},
+        )
+        removed = await client.delete("/conversations/messages/message-1/feedback")
+        generated = await client.post(
+            "/conversations/messages/message-1/recommended-questions"
+        )
+    finally:
+        app.state.message_feedback_service = original_feedback
+        app.state.recommended_question_service = original_recommend
+        app.dependency_overrides.pop(require_user, None)
+
+    assert submitted.json()["code"] == "0"
+    assert removed.json()["code"] == "0"
+    assert generated.json()["data"] == {
+        "status": "SUCCESS",
+        "questions": ["下一步如何配置？"],
+    }
+    assert feedback.calls == [
+        ("submit", "message-1", 42, -1, "不准确", "缺少来源"),
+        ("remove", "message-1", 42),
+    ]
+    assert recommend.calls == [("message-1", 42)]
 
 
 def test_all_conversation_routes_require_authentication() -> None:

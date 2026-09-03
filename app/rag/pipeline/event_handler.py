@@ -30,6 +30,7 @@ class StreamEventCallback(StreamCallback, Protocol):
     async def on_reply_to_message_id(self, message_id: str | None) -> None: ...
     async def on_cancelled(self) -> None: ...
     async def on_sources(self, sources: list[SourceRef]) -> None: ...
+    async def on_grounding_chunks(self, chunks: list[dict]) -> None: ...
 
 
 class StreamChatEventHandler:
@@ -60,6 +61,7 @@ class StreamChatEventHandler:
         self._thinking_start: float | None = None
         self._reply_to_message_id: str | None = None
         self._sources: list[SourceRef] = []
+        self._grounding_chunks: list[dict] = []
         self._terminal = False
         self._terminal_lock = asyncio.Lock()
         self._terminal_task: asyncio.Task[None] | None = None
@@ -96,6 +98,11 @@ class StreamChatEventHandler:
         if not self._accepting():
             return
         self._sources = list(sources)
+
+    async def on_grounding_chunks(self, chunks: list[dict]) -> None:
+        if not self._accepting():
+            return
+        self._grounding_chunks = list(chunks)
 
     async def on_complete(self) -> None:
         """正常完成：assistant 消息 NORMAL 落库，发 finish + done。"""
@@ -161,6 +168,7 @@ class StreamChatEventHandler:
                 for source in self._sources
             ]
             or None,
+            retrieved_chunks=self._grounding_chunks or None,
             message_status=str(status),
             reply_to_message_id=self._reply_to_message_id,
         )

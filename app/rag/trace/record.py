@@ -89,3 +89,39 @@ class RagTraceRecordService:
                 )
         except Exception:
             logger.exception("RAG Trace retrieval 节点写入失败")
+
+    async def record_recommendation(
+        self,
+        conversation_id: uuid.UUID,
+        user_id: int,
+        duration_ms: int,
+        status: str,
+        question_count: int,
+    ) -> None:
+        """把按需推荐生成挂到该会话最近一次 RAG run，不反向影响接口。"""
+        try:
+            async with self._sessions.begin() as session:
+                trace_id = await session.scalar(
+                    select(RagTraceRun.trace_id)
+                    .where(
+                        RagTraceRun.conversation_id == conversation_id,
+                        RagTraceRun.user_id == user_id,
+                    )
+                    .order_by(RagTraceRun.create_time.desc())
+                    .limit(1)
+                )
+                if trace_id is None:
+                    return
+                session.add(
+                    RagTraceNode(
+                        trace_id=trace_id,
+                        node_id=new_native_uuid7(),
+                        node_type="RECOMMEND_GEN",
+                        node_name="recommended-question-gen",
+                        status=status,
+                        duration_ms=max(0, duration_ms),
+                        extra_data={"questionCount": question_count},
+                    )
+                )
+        except Exception:
+            logger.exception("RAG Trace 推荐追问节点写入失败")

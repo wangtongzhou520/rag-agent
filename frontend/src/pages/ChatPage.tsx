@@ -3,11 +3,15 @@ import {
   ArrowUp,
   BrainCircuit,
   Database,
+  ListPlus,
+  LoaderCircle,
   LogOut,
   Menu,
   MessageSquarePlus,
   PanelRightOpen,
   Square,
+  ThumbsDown,
+  ThumbsUp,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
@@ -59,6 +63,8 @@ export function ChatPage() {
     setTitle,
     send,
     stop,
+    voteMessage,
+    loadRecommendations,
     reset,
   } = useChatStore();
   const [draft, setDraft] = useState("");
@@ -359,6 +365,71 @@ export function ChatPage() {
                             <PanelRightOpen aria-hidden="true" />
                             查看 {turn.sources.length} 条回答来源
                           </button>
+                        )}
+                        {!turn.streaming && turn.persisted && turn.messageStatus === "NORMAL" && (
+                          <div className="answer-followup">
+                            <div className="answer-tools" aria-label="回答操作">
+                              <span>这个回答有帮助吗</span>
+                              <button
+                                type="button"
+                                className={cn(turn.vote === 1 && "is-active")}
+                                aria-label="赞同回答"
+                                aria-pressed={turn.vote === 1}
+                                disabled={turn.feedbackPending}
+                                onClick={() => void voteMessage(turn.id, 1)}
+                              >
+                                <ThumbsUp aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                className={cn(turn.vote === -1 && "is-active", "is-negative")}
+                                aria-label="不赞同回答"
+                                aria-pressed={turn.vote === -1}
+                                disabled={turn.feedbackPending}
+                                onClick={() => void voteMessage(turn.id, -1)}
+                              >
+                                <ThumbsDown aria-hidden="true" />
+                              </button>
+                              {turn.recommendedQuestions == null && (
+                                <button
+                                  type="button"
+                                  className="answer-tools__recommend"
+                                  disabled={turn.recommendationPending}
+                                  onClick={() => void loadRecommendations(turn.id)}
+                                >
+                                  {turn.recommendationPending ? (
+                                    <LoaderCircle className="is-spinning" aria-hidden="true" />
+                                  ) : (
+                                    <ListPlus aria-hidden="true" />
+                                  )}
+                                  {turn.recommendationPending ? "正在生成" : "后续问题"}
+                                </button>
+                              )}
+                            </div>
+                            {turn.recommendedQuestions && turn.recommendedQuestions.length > 0 && (
+                              <div className="recommended-questions">
+                                <span>接着问</span>
+                                {turn.recommendedQuestions.map((question) => (
+                                  <button
+                                    type="button"
+                                    key={question}
+                                    onClick={() => askExample(question)}
+                                  >
+                                    {question}
+                                    <ArrowUp aria-hidden="true" />
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {turn.recommendationStatus === "EMPTY" && (
+                              <p className="answer-action-note">当前回答没有合适的后续问题。</p>
+                            )}
+                            {turn.actionError && (
+                              <p className="answer-action-note answer-action-note--error">
+                                {turn.actionError}
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>

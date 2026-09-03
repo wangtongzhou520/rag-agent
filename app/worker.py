@@ -20,12 +20,36 @@ from app.framework.logging import get_logger, init_logging
 from app.framework.task_queue import ClaimedTask, TaskQueue
 from app.knowledge.tasks import KnowledgeTaskHandler
 from app.model_runtime.factory import build_model_runtime
+from app.rag.feedback import FEEDBACK_TASK_TYPE, MessageFeedbackTaskHandler
 
 logger = get_logger(__name__)
 
 POLL_SECONDS = 1.0
 RECOVER_SECONDS = 60.0
 RENEW_SECONDS = 60.0
+
+
+class WorkerTaskHandler:
+    """按任务类型分发到领域 handler，保持 PG 队列只有一套消费循环。"""
+
+    def __init__(
+        self,
+        knowledge: KnowledgeTaskHandler,
+        feedback: MessageFeedbackTaskHandler,
+    ) -> None:
+        self._knowledge = knowledge
+        self._feedback = feedback
+
+    async def handle(self, task: ClaimedTask) -> None:
+        if task.task_type == FEEDBACK_TASK_TYPE:
+            await self._feedback.handle(task)
+            return
+        await self._knowledge.handle(task)
+
+    async def mark_retry_or_failed(
+        self, task: ClaimedTask, error: str, terminal: bool
+    ) -> None:
+        await self._knowledge.mark_retry_or_failed(task, error, terminal)
 
 
 async def _listen_notifications(
@@ -79,7 +103,7 @@ async def _renew_loop(
 
 async def _process(
     queue: TaskQueue,
-    handler: KnowledgeTaskHandler,
+    handler: WorkerTaskHandler,
     task: ClaimedTask,
     owner: str,
 ) -> None:
@@ -90,13 +114,20 @@ async def _process(
     )
     try:
         await handler.handle(task)
-        await queue.succeed(task.id, owner)
-        logger.info("task succeeded", task_id=task.id, task_type=task.task_type)
+        completed = await queue.succeed(task.id, owner, task.event_id)
+        if completed:
+            logger.info("task succeeded", task_id=task.id, task_type=task.task_type)
+        else:
+            logger.info(
+                "task superseded and requeued",
+                task_id=task.id,
+                task_type=task.task_type,
+            )
     except Exception as exc:
         logger.exception(
             "task failed", task_id=task.id, task_type=task.task_type
         )
-        terminal = await queue.fail(task.id, owner, str(exc))
+        terminal = await queue.fail(task.id, owner, str(exc), task.event_id)
         await handler.mark_retry_or_failed(task, str(exc), terminal)
     finally:
         renew_stopped.set()
@@ -120,7 +151,10 @@ async def run() -> None:
         PgChunkIndexWriter(engine),
     )
     queue = TaskQueue(engine)
-    handler = KnowledgeTaskHandler(engine, kernel)
+    handler = WorkerTaskHandler(
+        KnowledgeTaskHandler(engine, kernel),
+        MessageFeedbackTaskHandler(engine),
+    )
     owner = f"{socket.gethostname()}:{os.getpid()}"
 
     stop_event = asyncio.Event()

@@ -32,6 +32,7 @@ export type MessageDelta = z.infer<typeof messageDeltaSchema>;
 export type CompletionPayload = z.infer<typeof completionSchema>;
 export type MetaPayload = z.infer<typeof metaSchema>;
 export type MessageStatus = CompletionPayload["messageStatus"];
+export type RecommendationStatus = "SUCCESS" | "EMPTY" | "FAILED";
 
 export type ChatStreamEvent =
   | { event: "meta"; data: MetaPayload }
@@ -48,8 +49,20 @@ export interface ChatTurn {
   thinking?: string;
   sources?: SourceRef[];
   messageStatus?: MessageStatus;
+  vote?: 1 | -1 | null;
+  recommendedQuestions?: string[] | null;
+  recommendationStatus?: RecommendationStatus;
+  feedbackPending?: boolean;
+  recommendationPending?: boolean;
+  actionError?: string;
+  persisted?: boolean;
   error?: string;
   streaming?: boolean;
+}
+
+export interface RecommendedQuestionsResult {
+  status: RecommendationStatus;
+  questions: string[];
 }
 
 export interface ConversationSummary {

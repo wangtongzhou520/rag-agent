@@ -27,6 +27,7 @@ from app.framework.config import AuthSettings, DatasourceSettings, get_settings
 from app.framework.db import init_schema
 from app.framework.exceptions import BizException
 from app.framework.result import ErrorCode, Results
+from app.framework.sse import RecommendedQuestionsPayload, RecommendedQuestionStatus
 from app.framework.task_queue import TaskQueue
 from app.knowledge.models import (
     VECTOR_DIMENSION,
@@ -38,8 +39,10 @@ from app.knowledge.models import (
 )
 from app.knowledge.tasks import KnowledgeTaskHandler
 from app.rag.conversation import ConversationService
+from app.rag.feedback import MessageFeedbackService, MessageFeedbackTaskHandler
 from app.rag.memory.store import ConversationMemoryStore
 from app.rag.models import Conversation, ConversationSummary, Message, MessageFeedback
+from app.rag.recommend import RecommendedQuestionService
 from app.rag.retrieval.metadata import ChunkMetadataResolver
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
@@ -254,9 +257,15 @@ async def test_conversation_crud_isolated_by_user_and_soft_deletes_children(
                 ConversationSummary.conversation_id == conversation_id
             )
         )
+        feedback_deleted = await session.scalar(
+            select(MessageFeedback.deleted).where(
+                MessageFeedback.conversation_id == conversation_id
+            )
+        )
     assert conversation_deleted == 1
     assert child_deleted == [1, 1]
     assert summary_deleted == 1
+    assert feedback_deleted == 1
 
     with pytest.raises(ValueError, match="deleted"):
         await memory.append_message(
@@ -265,6 +274,72 @@ async def test_conversation_crud_isolated_by_user_and_soft_deletes_children(
             role=ChatRole.USER,
             content="删除后不可继续写入",
         )
+
+
+async def test_feedback_queue_latest_event_and_recommendation_cache(
+    integration_engine: AsyncEngine,
+) -> None:
+    conversation_id = uuid.uuid4()
+    memory = ConversationMemoryStore(integration_engine)
+    await memory.get_or_create_conversation(conversation_id, user_id=11)
+    user_message_id = await memory.append_message(
+        conversation_id=conversation_id,
+        user_id=11,
+        role=ChatRole.USER,
+        content="如何继续配置？",
+    )
+    assistant_message_id = await memory.append_message(
+        conversation_id=conversation_id,
+        user_id=11,
+        role=ChatRole.ASSISTANT,
+        content="先完成基础配置 [1](#cite-1)。",
+        retrieved_chunks=[{"docName": "配置手册", "text": "基础配置步骤"}],
+        reply_to_message_id=user_message_id,
+    )
+    feedback = MessageFeedbackService(integration_engine)
+    feedback_handler = MessageFeedbackTaskHandler(integration_engine)
+    queue = TaskQueue(integration_engine)
+
+    await feedback.submit(str(assistant_message_id), 11, 1)
+    first = await queue.claim("feedback-worker")
+    assert first is not None
+    await feedback.remove(str(assistant_message_id), 11)
+    await feedback_handler.handle(first)
+    assert await queue.succeed(first.id, "feedback-worker", first.event_id) is False
+
+    latest = await queue.claim("feedback-worker")
+    assert latest is not None and latest.event_id != first.event_id
+    await feedback_handler.handle(latest)
+    assert await queue.succeed(latest.id, "feedback-worker", latest.event_id) is True
+    messages = await ConversationService(integration_engine).list_messages(
+        str(conversation_id), 11
+    )
+    assert messages[-1]["vote"] is None
+
+    class Generator:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def generate(self, question, answer, grounding_chunks):
+            self.calls += 1
+            assert question == "如何继续配置？"
+            assert "#cite-1" in answer
+            assert grounding_chunks == [
+                {"docName": "配置手册", "text": "基础配置步骤"}
+            ]
+            return RecommendedQuestionsPayload(
+                status=RecommendedQuestionStatus.SUCCESS,
+                questions=["下一项配置是什么？"],
+            )
+
+    generator = Generator()
+    recommendations = RecommendedQuestionService(integration_engine, generator)
+    generated = await recommendations.generate(str(assistant_message_id), 11)
+    cached = await recommendations.generate(str(assistant_message_id), 11)
+
+    assert generated.questions == ["下一项配置是什么？"]
+    assert cached.questions == generated.questions
+    assert generator.calls == 1
 
 
 async def test_query_mapping_db_and_cache(

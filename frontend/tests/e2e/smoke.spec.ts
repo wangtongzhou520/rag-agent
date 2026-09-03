@@ -13,6 +13,7 @@ test("renders the blue login foundation", async ({ page }) => {
 });
 
 test("streams an answer and opens its source context", async ({ page }) => {
+  const feedbackRequests: Array<{ method: string; vote?: number }> = [];
   await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
   await page.route("**/api/ragent/user/me", (route) =>
     route.fulfill({
@@ -25,6 +26,23 @@ test("streams an answer and opens its source context", async ({ page }) => {
   );
   await page.route("**/api/ragent/conversations/*/messages", (route) =>
     route.fulfill({ contentType: "application/json", body: JSON.stringify(result([])) }),
+  );
+  await page.route("**/api/ragent/conversations/messages/message-e2e/feedback", (route) => {
+    feedbackRequests.push({
+      method: route.request().method(),
+      vote: (route.request().postDataJSON() as { vote?: number } | null)?.vote,
+    });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+  });
+  await page.route(
+    "**/api/ragent/conversations/messages/message-e2e/recommended-questions",
+    (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({ status: "SUCCESS", questions: ["如何验证检索结果？", "怎样查看运行轨迹？"] }),
+        ),
+      }),
   );
   await page.route("**/api/ragent/rag/v3/chat?*", (route) =>
     route.fulfill({
@@ -53,6 +71,15 @@ test("streams an answer and opens its source context", async ({ page }) => {
 
   await expect(page.getByText("答案来自知识库")).toBeVisible();
   await expect(page.getByText("回答已完成")).toBeVisible();
+  await page.getByRole("button", { name: "赞同回答", exact: true }).click();
+  await expect(page.getByRole("button", { name: "赞同回答", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(feedbackRequests).toEqual([{ method: "POST", vote: 1 }]);
+  await page.getByRole("button", { name: "后续问题" }).click();
+  await expect(page.getByRole("button", { name: /如何验证检索结果/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /怎样查看运行轨迹/ })).toBeVisible();
   await page.getByRole("link", { name: "1" }).click();
   await expect(page.getByText("RAG 设计文档.md")).toBeVisible();
   await expect(page.getByText("混合检索与来源引用设计。")).toBeVisible();

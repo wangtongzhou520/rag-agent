@@ -3,8 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useChatStore } from "@/features/chat/store";
 
 const apiMocks = vi.hoisted(() => ({
+  deleteMessageFeedback: vi.fn(),
+  generateRecommendedQuestions: vi.fn(),
   stopChat: vi.fn(),
   streamChat: vi.fn(),
+  submitMessageFeedback: vi.fn(),
 }));
 
 vi.mock("@/features/chat/api", () => apiMocks);
@@ -49,6 +52,59 @@ describe("chat store server-side stop", () => {
         messageId: "message-1",
         messageStatus: "INTERRUPTED",
       },
+    });
+  });
+
+  it("optimistically toggles feedback and removes the same vote", async () => {
+    apiMocks.submitMessageFeedback.mockResolvedValue(null);
+    apiMocks.deleteMessageFeedback.mockResolvedValue(null);
+    useChatStore.getState().hydrateConversation("conversation-1", "历史会话", [
+      {
+        id: "message-1",
+        conversationId: "conversation-1",
+        role: "assistant",
+        content: "回答",
+        vote: null,
+        recommendedQuestions: null,
+        messageStatus: "NORMAL",
+        createTime: 1,
+      },
+    ]);
+
+    await useChatStore.getState().voteMessage("message-1", 1);
+    expect(apiMocks.submitMessageFeedback).toHaveBeenCalledWith("message-1", 1);
+    expect(useChatStore.getState().turns[0].vote).toBe(1);
+
+    await useChatStore.getState().voteMessage("message-1", 1);
+    expect(apiMocks.deleteMessageFeedback).toHaveBeenCalledWith("message-1");
+    expect(useChatStore.getState().turns[0].vote).toBeNull();
+  });
+
+  it("stores generated follow-up questions on the assistant turn", async () => {
+    apiMocks.generateRecommendedQuestions.mockResolvedValue({
+      status: "SUCCESS",
+      questions: ["下一步是什么？", "如何验证？"],
+    });
+    useChatStore.getState().hydrateConversation("conversation-1", "历史会话", [
+      {
+        id: "message-1",
+        conversationId: "conversation-1",
+        role: "assistant",
+        content: "回答",
+        vote: null,
+        recommendedQuestions: null,
+        messageStatus: "NORMAL",
+        createTime: 1,
+      },
+    ]);
+
+    await useChatStore.getState().loadRecommendations("message-1");
+
+    expect(apiMocks.generateRecommendedQuestions).toHaveBeenCalledWith("message-1");
+    expect(useChatStore.getState().turns[0]).toMatchObject({
+      recommendationStatus: "SUCCESS",
+      recommendedQuestions: ["下一步是什么？", "如何验证？"],
+      recommendationPending: false,
     });
   });
 });

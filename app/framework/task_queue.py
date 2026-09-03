@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.framework.async_task import AsyncTask
@@ -52,6 +53,45 @@ class TaskQueue:
         )
         return task
 
+    @staticmethod
+    async def enqueue_latest(
+        session: AsyncSession,
+        task_type: str,
+        biz_key: str,
+        payload: dict,
+        *,
+        max_retries: int = 5,
+    ) -> uuid.UUID:
+        """合并同业务键的活跃事件；running 快照结束时会检测版本并重新排队。"""
+        event_id = new_native_uuid7()
+        statement = insert(AsyncTask).values(
+            event_id=event_id,
+            task_type=task_type,
+            biz_key=biz_key,
+            payload=payload,
+            status="pending",
+            retry_count=0,
+            max_retries=max_retries,
+        )
+        statement = statement.on_conflict_do_update(
+            index_elements=[AsyncTask.task_type, AsyncTask.biz_key],
+            index_where=AsyncTask.status.in_(("pending", "running")),
+            set_={
+                "event_id": statement.excluded.event_id,
+                "payload": statement.excluded.payload,
+                "retry_count": 0,
+                "max_retries": statement.excluded.max_retries,
+                "next_retry_at": None,
+                "error_message": None,
+            },
+        )
+        await session.execute(statement)
+        await session.execute(
+            text("SELECT pg_notify('ragent_task', :payload)"),
+            {"payload": str(event_id)},
+        )
+        return event_id
+
     async def claim(self, owner: str) -> ClaimedTask | None:
         now = datetime.now(UTC).replace(tzinfo=None)
         async with self._sessions.begin() as session:
@@ -83,19 +123,9 @@ class TaskQueue:
                 task.max_retries,
             )
 
-    async def succeed(self, task_id: int, owner: str) -> None:
-        async with self._sessions.begin() as session:
-            await session.execute(
-                update(AsyncTask)
-                .where(
-                    AsyncTask.id == task_id,
-                    AsyncTask.owner == owner,
-                    AsyncTask.status == "running",
-                )
-                .values(status="success", owner=None, lease_until=None, error_message=None)
-            )
-
-    async def fail(self, task_id: int, owner: str, error: str) -> bool:
+    async def succeed(
+        self, task_id: int, owner: str, event_id: uuid.UUID | None = None
+    ) -> bool:
         async with self._sessions.begin() as session:
             task = await session.scalar(
                 select(AsyncTask)
@@ -107,6 +137,41 @@ class TaskQueue:
                 .with_for_update()
             )
             if task is None:
+                return False
+            if event_id is not None and task.event_id != event_id:
+                task.status = "pending"
+                task.owner = None
+                task.lease_until = None
+                return False
+            task.status = "success"
+            task.owner = None
+            task.lease_until = None
+            task.error_message = None
+            return True
+
+    async def fail(
+        self,
+        task_id: int,
+        owner: str,
+        error: str,
+        event_id: uuid.UUID | None = None,
+    ) -> bool:
+        async with self._sessions.begin() as session:
+            task = await session.scalar(
+                select(AsyncTask)
+                .where(
+                    AsyncTask.id == task_id,
+                    AsyncTask.owner == owner,
+                    AsyncTask.status == "running",
+                )
+                .with_for_update()
+            )
+            if task is None:
+                return False
+            if event_id is not None and task.event_id != event_id:
+                task.status = "pending"
+                task.owner = None
+                task.lease_until = None
                 return False
             task.retry_count += 1
             task.owner = None

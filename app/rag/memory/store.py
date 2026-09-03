@@ -100,6 +100,7 @@ class ConversationMemoryStore:
         thinking_content: str | None = None,
         thinking_duration: int | None = None,
         sources: list | None = None,
+        retrieved_chunks: list | None = None,
         message_status: str = "NORMAL",
         reply_to_message_id: uuid.UUID | None = None,
     ) -> uuid.UUID:
@@ -122,6 +123,7 @@ class ConversationMemoryStore:
                 thinking_content=thinking_content,
                 thinking_duration=thinking_duration,
                 sources=sources,
+                retrieved_chunks=retrieved_chunks,
                 message_status=message_status,
                 reply_to_message_id=reply_to_message_id,
             )
