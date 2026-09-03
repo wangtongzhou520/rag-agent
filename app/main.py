@@ -30,6 +30,7 @@ from app.framework.trace_ctx import reset_request_id, set_request_id
 from app.knowledge.router import router as knowledge_router
 from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
+from app.rag.conversation import ConversationService
 from app.rag.intent.cache import IntentTreeCacheManager
 from app.rag.intent.classifier import DefaultIntentClassifier
 from app.rag.intent.guidance import IntentGuidanceService, ModelAmbiguityChecker
@@ -52,6 +53,7 @@ from app.rag.retrieval.scope import RetrievalScopeResolver
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
 from app.rag.rewrite.router import router as rewrite_router
 from app.rag.rewrite.term_mapping import ModelRewriteService, QueryTermMappingService
+from app.rag.router import conversation_router
 from app.rag.router import router as rag_router
 from app.rag.service import RAGChatService
 from app.rag.trace.query import RagTraceQueryService
@@ -182,6 +184,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.rag_chat_service = RAGChatService(
         memory_service, pipeline, settings, trace_service
     )
+    app.state.conversation_service = ConversationService(
+        engine, title_max_length=settings.rag.memory.title_max_length
+    )
     app.state.knowledge_service = KnowledgeService(
         engine,
         MimeTypeDetector(),
@@ -243,6 +248,7 @@ def create_app() -> FastAPI:
         return Results.success({"status": "UP"}).model_dump(by_alias=True)
 
     app.include_router(rag_router)
+    app.include_router(conversation_router)
     app.include_router(auth_router)
     app.include_router(knowledge_router)
     app.include_router(rewrite_router)

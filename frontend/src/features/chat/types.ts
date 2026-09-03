@@ -51,3 +51,23 @@ export interface ChatTurn {
   error?: string;
   streaming?: boolean;
 }
+
+export interface ConversationSummary {
+  conversationId: string;
+  title: string;
+  lastTime: number;
+}
+
+export interface ConversationMessage {
+  id: string;
+  conversationId: string;
+  role: "user" | "assistant";
+  content: string;
+  thinkingContent?: string | null;
+  thinkingDuration?: number | null;
+  vote?: 1 | -1 | null;
+  sources?: SourceRef[] | null;
+  recommendedQuestions?: string[] | null;
+  messageStatus: MessageStatus;
+  createTime: number;
+}

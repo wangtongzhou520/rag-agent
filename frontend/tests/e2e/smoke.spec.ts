@@ -20,6 +20,12 @@ test("streams an answer and opens its source context", async ({ page }) => {
       body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
     }),
   );
+  await page.route("**/api/ragent/conversations", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(result([])) }),
+  );
+  await page.route("**/api/ragent/conversations/*/messages", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(result([])) }),
+  );
   await page.route("**/api/ragent/rag/v3/chat?*", (route) =>
     route.fulfill({
       contentType: "text/event-stream;charset=UTF-8",
@@ -52,6 +58,95 @@ test("streams an answer and opens its source context", async ({ page }) => {
   await expect(page.getByText("混合检索与来源引用设计。")).toBeVisible();
   await page.getByRole("button", { name: "预览文档" }).click();
   await expect(page.getByRole("heading", { name: "混合检索" })).toBeVisible();
+});
+
+test("opens, renames and deletes a saved conversation", async ({ page }, testInfo) => {
+  const conversationId = "01999111-1111-7111-8111-111111111111";
+  const records = [
+    {
+      conversationId,
+      title: "产品接入讨论",
+      lastTime: Date.parse("2026-09-03T10:30:00+08:00"),
+    },
+  ];
+  const messages = [
+    {
+      id: "01999222-2222-7222-8222-222222222222",
+      conversationId,
+      role: "user",
+      content: "如何接入产品知识库？",
+      thinkingContent: null,
+      thinkingDuration: null,
+      vote: null,
+      sources: null,
+      recommendedQuestions: null,
+      messageStatus: "NORMAL",
+      createTime: Date.parse("2026-09-03T10:29:00+08:00"),
+    },
+    {
+      id: "01999333-3333-7333-8333-333333333333",
+      conversationId,
+      role: "assistant",
+      content: "先创建知识库，再导入并分块文档。",
+      thinkingContent: "读取产品接入材料",
+      thinkingDuration: 1,
+      vote: 1,
+      sources: [],
+      recommendedQuestions: [],
+      messageStatus: "NORMAL",
+      createTime: Date.parse("2026-09-03T10:30:00+08:00"),
+    },
+  ];
+
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/conversations**", (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "GET" && path.endsWith(`/${conversationId}/messages`)) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result(messages)),
+      });
+    }
+    if (request.method() === "GET") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result(records)),
+      });
+    }
+    if (request.method() === "PUT") {
+      records[0].title = (request.postDataJSON() as { title: string }).title;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    if (request.method() === "DELETE") {
+      records.splice(0, 1);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    return route.abort();
+  });
+
+  await page.goto(`/chat/${conversationId}`);
+  await expect(page.getByText("先创建知识库，再导入并分块文档。")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^产品接入讨论/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("conversation-history.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "管理 产品接入讨论" }).click();
+  await page.getByRole("menuitem", { name: "重命名" }).click();
+  await page.getByLabel("会话标题").fill("配置方案讨论");
+  await page.getByRole("button", { name: "保存标题" }).click();
+  await expect(page.getByRole("button", { name: /^配置方案讨论/ })).toBeVisible();
+
+  await page.getByRole("button", { name: "管理 配置方案讨论" }).click();
+  await page.getByRole("menuitem", { name: "删除" }).click();
+  await page.getByRole("button", { name: "确认删除" }).click();
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByText("首次提问后，会话会保存在这里。")).toBeVisible();
 });
 
 test("manages knowledge bases through the admin console", async ({ page }) => {

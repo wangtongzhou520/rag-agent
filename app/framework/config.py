@@ -227,6 +227,7 @@ class EngineSettings(BaseModel):
 
 class MemorySettings(BaseModel):
     history_keep_turns: int = 8
+    title_max_length: int = 30
 
 
 class RateLimitSettings(BaseModel):

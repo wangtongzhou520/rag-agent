@@ -376,7 +376,7 @@ textarea {
 .chat-sidebar nav {
   display: grid;
   gap: 5px;
-  margin-top: 38px;
+  margin-top: 28px;
 }
 .chat-sidebar nav > p {
   margin: 0 12px 9px;
@@ -411,6 +411,155 @@ textarea {
 .chat-nav-item small {
   font-family: "IBM Plex Mono", monospace;
   font-size: 9px;
+}
+.conversation-history {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  margin-top: 26px;
+}
+.conversation-history > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 9px;
+  color: var(--blue-200);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.conversation-history > header small {
+  display: grid;
+  min-width: 20px;
+  height: 18px;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 10%);
+  font-size: 9px;
+}
+.conversation-history__list {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-color: rgb(255 255 255 / 20%) transparent;
+  scrollbar-width: thin;
+}
+.conversation-history__item {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  border-radius: 8px;
+}
+.conversation-history__item + .conversation-history__item {
+  margin-top: 2px;
+}
+.conversation-history__item.is-active {
+  background: rgb(255 255 255 / 13%);
+}
+.conversation-history__item > button:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 9px 4px 9px 11px;
+  border: 0;
+  color: var(--blue-100);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+.conversation-history__item > button:first-child strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-history__item > button:first-child small {
+  color: var(--blue-300);
+  font-size: 9px;
+}
+.conversation-history__more {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--blue-200);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+}
+.conversation-history__item:hover .conversation-history__more,
+.conversation-history__item.is-active .conversation-history__more,
+.conversation-history__more:focus-visible {
+  opacity: 1;
+}
+.conversation-history__more:hover {
+  color: white;
+  background: rgb(255 255 255 / 10%);
+}
+.conversation-history__more svg {
+  width: 15px;
+}
+.conversation-history__menu {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 3;
+  width: 112px;
+  overflow: hidden;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 10px 28px rgb(16 42 86 / 22%);
+}
+.conversation-history__menu button {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+.conversation-history__menu button:hover {
+  background: var(--blue-50);
+}
+.conversation-history__menu button:last-child {
+  color: var(--danger);
+}
+.conversation-history__menu svg {
+  width: 13px;
+}
+.conversation-history__state {
+  margin: 0;
+  padding: 14px 10px;
+  color: var(--blue-200);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.conversation-history__state p {
+  margin: 0;
+}
+.conversation-history__state button {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  color: white;
+  background: transparent;
+  font-size: 10px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .chat-sidebar__session {
   display: grid;
@@ -551,6 +700,35 @@ textarea {
   min-height: 0;
   overflow-y: auto;
   scroll-behavior: smooth;
+}
+.chat-history-state {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 32px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.chat-history-state > span {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--blue-100);
+  border-top-color: var(--blue-600);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+.chat-history-state p {
+  max-width: 460px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.chat-history-state--error strong {
+  color: var(--danger);
+  font-size: 14px;
 }
 .chat-empty-state {
   display: flex;

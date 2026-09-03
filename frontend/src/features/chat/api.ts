@@ -1,7 +1,11 @@
 import { API_BASE_URL, request, tokenStorage } from "@/shared/api/client";
 import { ApiError } from "@/shared/api/error";
 import { readSseStream } from "@/features/chat/sse";
-import type { ChatStreamEvent } from "@/features/chat/types";
+import type {
+  ChatStreamEvent,
+  ConversationMessage,
+  ConversationSummary,
+} from "@/features/chat/types";
 
 export interface StreamChatInput {
   question: string;
@@ -12,6 +16,29 @@ export interface StreamChatInput {
 
 export function getDocumentPreview(docId: string) {
   return request<string>({ method: "GET", url: `/knowledge-base/docs/${docId}/preview` });
+}
+
+export function listConversations() {
+  return request<ConversationSummary[]>({ method: "GET", url: "/conversations" });
+}
+
+export function listConversationMessages(conversationId: string) {
+  return request<ConversationMessage[]>({
+    method: "GET",
+    url: `/conversations/${conversationId}/messages`,
+  });
+}
+
+export function renameConversation(conversationId: string, title: string) {
+  return request<null>({
+    method: "PUT",
+    url: `/conversations/${conversationId}`,
+    data: { title },
+  });
+}
+
+export function deleteConversation(conversationId: string) {
+  return request<null>({ method: "DELETE", url: `/conversations/${conversationId}` });
 }
 
 async function responseError(response: Response): Promise<ApiError> {

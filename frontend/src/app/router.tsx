@@ -43,6 +43,16 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: "/chat/:conversationId",
+    element: (
+      <SessionBootstrap>
+        <RequireAuth>
+          <ChatRoute />
+        </RequireAuth>
+      </SessionBootstrap>
+    ),
+  },
+  {
     path: "/admin",
     element: (
       <SessionBootstrap>

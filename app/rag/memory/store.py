@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.framework.chat_types import ChatMessage, ChatRole
@@ -44,10 +44,9 @@ class ConversationMemoryStore:
     ) -> None:
         async with self._session_factory() as session:
             existing = await session.scalar(
-                select(Conversation.id).where(
+                select(Conversation).where(
                     Conversation.conversation_id == conversation_id,
                     Conversation.user_id == user_id,
-                    Conversation.deleted == 0,
                 )
             )
             if existing is None:
@@ -55,6 +54,8 @@ class ConversationMemoryStore:
                     Conversation(conversation_id=conversation_id, user_id=user_id)
                 )
                 await session.commit()
+            elif existing.deleted:
+                raise ValueError("conversation has been deleted")
 
     async def load_history(
         self, conversation_id: uuid.UUID, user_id: int, keep_turns: int
@@ -104,6 +105,15 @@ class ConversationMemoryStore:
     ) -> uuid.UUID:
         """写入一条消息并刷新会话 last_time，返回预分配的 UUIDv7 消息 ID。"""
         async with self._session_factory() as session:
+            conversation_exists = await session.scalar(
+                select(Conversation.id).where(
+                    Conversation.conversation_id == conversation_id,
+                    Conversation.user_id == user_id,
+                    Conversation.deleted == 0,
+                )
+            )
+            if conversation_exists is None:
+                raise ValueError("conversation does not exist or has been deleted")
             message = Message(
                 conversation_id=conversation_id,
                 user_id=user_id,
@@ -116,13 +126,23 @@ class ConversationMemoryStore:
                 reply_to_message_id=reply_to_message_id,
             )
             session.add(message)
+            values: dict = {"last_time": func.now()}
+            if role == ChatRole.USER:
+                values["title"] = case(
+                    (
+                        Conversation.title.is_(None),
+                        content.strip()[:30] or "新对话",
+                    ),
+                    else_=Conversation.title,
+                )
             await session.execute(
                 update(Conversation)
                 .where(
                     Conversation.conversation_id == conversation_id,
                     Conversation.user_id == user_id,
+                    Conversation.deleted == 0,
                 )
-                .values(last_time=func.now())
+                .values(**values)
             )
             await session.commit()
             return message.id

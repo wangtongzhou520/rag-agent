@@ -22,6 +22,7 @@ from app.core.ingest.writer import PgChunkIndexWriter
 from app.core.parser.detector import MimeTypeDetector
 from app.core.parser.registry import build_default_registry
 from app.framework.async_task import AsyncTask
+from app.framework.chat_types import ChatRole
 from app.framework.config import AuthSettings, DatasourceSettings, get_settings
 from app.framework.db import init_schema
 from app.framework.exceptions import BizException
@@ -36,6 +37,9 @@ from app.knowledge.models import (
     KnowledgeVector,
 )
 from app.knowledge.tasks import KnowledgeTaskHandler
+from app.rag.conversation import ConversationService
+from app.rag.memory.store import ConversationMemoryStore
+from app.rag.models import Conversation, ConversationSummary, Message, MessageFeedback
 from app.rag.retrieval.metadata import ChunkMetadataResolver
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
@@ -161,6 +165,106 @@ def _pdf_bytes() -> bytes:
 
 async def test_redis_container_is_reachable(redis_client: Redis) -> None:
     assert await redis_client.ping() is True
+
+
+async def test_conversation_crud_isolated_by_user_and_soft_deletes_children(
+    integration_engine: AsyncEngine,
+) -> None:
+    conversation_id = uuid.uuid4()
+    other_conversation_id = uuid.uuid4()
+    memory = ConversationMemoryStore(integration_engine)
+    service = ConversationService(integration_engine)
+
+    await memory.get_or_create_conversation(conversation_id, user_id=11)
+    user_message_id = await memory.append_message(
+        conversation_id=conversation_id,
+        user_id=11,
+        role=ChatRole.USER,
+        content="如何配置本地检索？",
+    )
+    assistant_message_id = await memory.append_message(
+        conversation_id=conversation_id,
+        user_id=11,
+        role=ChatRole.ASSISTANT,
+        content="请参考配置文档 [1](#cite-1)。",
+        thinking_content="检索配置材料",
+        thinking_duration=2,
+        sources=[{"index": 1, "docId": "7", "docName": "配置文档.md"}],
+        reply_to_message_id=user_message_id,
+    )
+    await memory.get_or_create_conversation(other_conversation_id, user_id=22)
+    await memory.append_message(
+        conversation_id=other_conversation_id,
+        user_id=22,
+        role=ChatRole.USER,
+        content="其他用户的问题",
+    )
+
+    sessions = async_sessionmaker(integration_engine, expire_on_commit=False)
+    async with sessions.begin() as session:
+        session.add_all(
+            [
+                ConversationSummary(
+                    conversation_id=conversation_id,
+                    user_id=11,
+                    last_message_id=assistant_message_id,
+                    content="用户正在配置本地检索。",
+                ),
+                MessageFeedback(
+                    message_id=assistant_message_id,
+                    user_id=11,
+                    conversation_id=conversation_id,
+                    vote=1,
+                ),
+            ]
+        )
+
+    conversations = await service.list_conversations(user_id=11)
+    assert len(conversations) == 1
+    assert conversations[0]["title"] == "如何配置本地检索？"
+    assert isinstance(conversations[0]["lastTime"], int)
+    other_conversations = await service.list_conversations(user_id=22)
+    assert len(other_conversations) == 1
+    assert other_conversations[0]["title"] == "其他用户的问题"
+
+    messages = await service.list_messages(str(conversation_id), user_id=11)
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+    assert messages[0]["vote"] is None
+    assert messages[1]["vote"] == 1
+    assert messages[1]["content"] == "请参考配置文档 [1](#cite-1)。"
+    assert await service.list_messages(str(conversation_id), user_id=22) == []
+
+    await service.rename(str(conversation_id), user_id=11, title="本地检索配置")
+    assert (await service.list_conversations(user_id=11))[0]["title"] == "本地检索配置"
+
+    await service.delete(str(conversation_id), user_id=11)
+    assert await service.list_conversations(user_id=11) == []
+    assert await service.list_messages(str(conversation_id), user_id=11) == []
+    async with sessions() as session:
+        conversation_deleted = await session.scalar(
+            select(Conversation.deleted).where(Conversation.conversation_id == conversation_id)
+        )
+        child_deleted = (
+            await session.scalars(
+                select(Message.deleted).where(Message.conversation_id == conversation_id)
+            )
+        ).all()
+        summary_deleted = await session.scalar(
+            select(ConversationSummary.deleted).where(
+                ConversationSummary.conversation_id == conversation_id
+            )
+        )
+    assert conversation_deleted == 1
+    assert child_deleted == [1, 1]
+    assert summary_deleted == 1
+
+    with pytest.raises(ValueError, match="deleted"):
+        await memory.append_message(
+            conversation_id=conversation_id,
+            user_id=11,
+            role=ChatRole.USER,
+            content="删除后不可继续写入",
+        )
 
 
 async def test_query_mapping_db_and_cache(

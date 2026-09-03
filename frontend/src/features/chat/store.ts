@@ -10,7 +10,7 @@ import {
   type StreamSnapshot,
 } from "@/features/chat/machine";
 import { StreamProtocolError } from "@/features/chat/sse";
-import type { ChatTurn } from "@/features/chat/types";
+import type { ChatTurn, ConversationMessage } from "@/features/chat/types";
 import { ApiError } from "@/shared/api/error";
 
 interface ChatState {
@@ -20,6 +20,13 @@ interface ChatState {
   stream: StreamSnapshot;
   deepThinking: boolean;
   setDeepThinking: (enabled: boolean) => void;
+  prepareConversation: (conversationId: string, title: string) => void;
+  hydrateConversation: (
+    conversationId: string,
+    title: string,
+    messages: ConversationMessage[],
+  ) => void;
+  setTitle: (title: string) => void;
   send: (question: string) => Promise<void>;
   stop: () => void;
   reset: () => void;
@@ -56,12 +63,42 @@ function updateAssistant(turns: ChatTurn[], snapshot: StreamSnapshot): ChatTurn[
   return next;
 }
 
+function historyTurns(messages: ConversationMessage[]): ChatTurn[] {
+  return messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    thinking: message.thinkingContent || undefined,
+    sources: message.sources || undefined,
+    messageStatus: message.messageStatus,
+  }));
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   title: "新对话",
   turns: [],
   stream: createStreamSnapshot(),
   deepThinking: false,
   setDeepThinking: (deepThinking) => set({ deepThinking }),
+  prepareConversation: (conversationId, title) => {
+    activeController?.abort();
+    activeController = undefined;
+    generation += 1;
+    set({
+      conversationId,
+      title,
+      turns: [],
+      stream: createStreamSnapshot(),
+    });
+  },
+  hydrateConversation: (conversationId, title, messages) =>
+    set({
+      conversationId,
+      title,
+      turns: historyTurns(messages),
+      stream: createStreamSnapshot(),
+    }),
+  setTitle: (title) => set({ title }),
   send: async (rawQuestion) => {
     const question = rawQuestion.trim();
     if (!question || activeController) return;

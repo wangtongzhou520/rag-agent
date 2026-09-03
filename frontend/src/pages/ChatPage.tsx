@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp,
   BrainCircuit,
@@ -7,14 +8,15 @@ import {
   MessageSquarePlus,
   PanelRightOpen,
   Square,
-  Workflow,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuthStore } from "@/features/auth/store";
 import { DocumentPreviewDialog } from "@/features/chat/DocumentPreviewDialog";
+import { listConversationMessages, listConversations } from "@/features/chat/api";
+import { ConversationHistory } from "@/features/chat/ConversationHistory";
 import { MarkdownAnswer } from "@/features/chat/MarkdownAnswer";
 import { SourcePanel } from "@/features/chat/SourcePanel";
 import { ThinkingPanel } from "@/features/chat/ThinkingPanel";
@@ -40,8 +42,24 @@ function phaseCopy(phase: ReturnType<typeof useChatStore.getState>["stream"]["ph
 }
 
 export function ChatPage() {
+  const navigate = useNavigate();
+  const { conversationId: routeConversationId } = useParams();
+  const queryClient = useQueryClient();
   const { user, logout } = useAuthStore();
-  const { title, turns, stream, deepThinking, setDeepThinking, send, stop, reset } = useChatStore();
+  const {
+    conversationId,
+    title,
+    turns,
+    stream,
+    deepThinking,
+    setDeepThinking,
+    prepareConversation,
+    hydrateConversation,
+    setTitle,
+    send,
+    stop,
+    reset,
+  } = useChatStore();
   const [draft, setDraft] = useState("");
   const [sourceOpen, setSourceOpen] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -49,6 +67,15 @@ export function ChatPage() {
   const [previewSource, setPreviewSource] = useState<SourceRef>();
   const endRef = useRef<HTMLDivElement>(null);
   const busy = ["connecting", "streaming", "finishing"].includes(stream.phase);
+  const conversationsQuery = useQuery({
+    queryKey: ["conversations"],
+    queryFn: listConversations,
+  });
+  const messagesQuery = useQuery({
+    queryKey: ["conversation-messages", routeConversationId],
+    queryFn: () => listConversationMessages(routeConversationId || ""),
+    enabled: Boolean(routeConversationId),
+  });
 
   const sources = useMemo(
     () =>
@@ -62,6 +89,43 @@ export function ChatPage() {
   }, [busy, turns]);
 
   useEffect(() => () => stop(), [stop]);
+
+  useEffect(() => {
+    if (!routeConversationId) return;
+    const state = useChatStore.getState();
+    if (state.conversationId !== routeConversationId) {
+      const selected = conversationsQuery.data?.find(
+        (conversation) => conversation.conversationId === routeConversationId,
+      );
+      prepareConversation(routeConversationId, selected?.title || "会话记录");
+    }
+  }, [conversationsQuery.data, prepareConversation, routeConversationId]);
+
+  useEffect(() => {
+    if (!routeConversationId || !messagesQuery.data) return;
+    const state = useChatStore.getState();
+    if (state.conversationId === routeConversationId && state.turns.length === 0) {
+      const selected = conversationsQuery.data?.find(
+        (conversation) => conversation.conversationId === routeConversationId,
+      );
+      hydrateConversation(routeConversationId, selected?.title || state.title, messagesQuery.data);
+    }
+  }, [conversationsQuery.data, hydrateConversation, messagesQuery.data, routeConversationId]);
+
+  useEffect(() => {
+    const selected = conversationsQuery.data?.find(
+      (conversation) => conversation.conversationId === conversationId,
+    );
+    if (selected && selected.title !== title) setTitle(selected.title);
+  }, [conversationId, conversationsQuery.data, setTitle, title]);
+
+  useEffect(() => {
+    if (stream.phase !== "completed" || !stream.conversationId) return;
+    void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    if (routeConversationId !== stream.conversationId) {
+      navigate(`/chat/${stream.conversationId}`, { replace: true });
+    }
+  }, [navigate, queryClient, routeConversationId, stream.conversationId, stream.phase]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -107,6 +171,7 @@ export function ChatPage() {
           type="button"
           onClick={() => {
             reset();
+            navigate("/chat");
             setNavigationOpen(false);
           }}
         >
@@ -125,19 +190,33 @@ export function ChatPage() {
               管理控制台
             </Link>
           )}
-          <span className="chat-nav-item chat-nav-item--disabled">
-            <Workflow aria-hidden="true" />
-            会话历史
-            <small>F3</small>
-          </span>
         </nav>
-        <div className="chat-sidebar__session">
-          <span>本轮会话</span>
-          <strong>{title}</strong>
-          <small>
-            {stream.conversationId ? stream.conversationId.slice(0, 13) : "等待首次提问"}
-          </small>
-        </div>
+        <ConversationHistory
+          conversations={conversationsQuery.data || []}
+          activeId={conversationId}
+          loading={conversationsQuery.isLoading}
+          error={
+            conversationsQuery.isError
+              ? conversationsQuery.error instanceof Error
+                ? conversationsQuery.error.message
+                : "会话列表载入失败"
+              : undefined
+          }
+          onRetry={() => void conversationsQuery.refetch()}
+          onOpen={(conversation) => {
+            navigate(`/chat/${conversation.conversationId}`);
+            setNavigationOpen(false);
+          }}
+          onRenamed={(renamedId, nextTitle) => {
+            if (renamedId === conversationId) setTitle(nextTitle);
+          }}
+          onDeleted={(deletedId) => {
+            if (deletedId === conversationId) {
+              reset();
+              navigate("/chat");
+            }
+          }}
+        />
         <div className="chat-sidebar__user">
           <span>{user?.username?.slice(0, 1).toUpperCase()}</span>
           <div>
@@ -194,7 +273,22 @@ export function ChatPage() {
         </header>
 
         <div className="chat-scroll-region">
-          {turns.length === 0 ? (
+          {routeConversationId && messagesQuery.isLoading && turns.length === 0 ? (
+            <div className="chat-history-state">
+              <span />
+              <p>正在载入会话记录…</p>
+            </div>
+          ) : routeConversationId && messagesQuery.isError && turns.length === 0 ? (
+            <div className="chat-history-state chat-history-state--error">
+              <strong>会话记录载入失败</strong>
+              <p>
+                {messagesQuery.error instanceof Error ? messagesQuery.error.message : "请稍后重试"}
+              </p>
+              <Button variant="secondary" onClick={() => void messagesQuery.refetch()}>
+                重新载入
+              </Button>
+            </div>
+          ) : turns.length === 0 ? (
             <section className="chat-empty-state">
               <p>基于知识库回答</p>
               <h1>
