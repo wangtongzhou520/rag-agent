@@ -227,13 +227,52 @@ async def test_cancel_persists_partial_content_as_interrupted() -> None:
     memory = FakeMemory()
     llm = FakeLLM(chunks=["已写", "一半"], cancel_after=1)
     pipeline = StreamChatPipeline(memory, llm, NonEmptyRetrieval())
+    sender = SseSender()
 
     with pytest.raises(asyncio.CancelledError):
-        await pipeline.execute(make_ctx(), make_handler(SseSender(), memory))
+        await pipeline.execute(make_ctx(), make_handler(sender, memory))
+
+    body = await drain(sender)
 
     assert memory.appended[-1][0] == "assistant"
     assert memory.appended[-1][1] == "已写"
     assert memory.appended[-1][2] == "INTERRUPTED"
+    assert "event: cancel" in body
+    assert '"messageStatus":"INTERRUPTED"' in body
+    assert body.rstrip().endswith("event: done\ndata: [DONE]")
+
+
+async def test_normal_terminal_survives_concurrent_reader_cancellation() -> None:
+    class BlockingMemory(FakeMemory):
+        def __init__(self) -> None:
+            super().__init__()
+            self.persisting = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def append_assistant_message(self, *args, **kwargs):
+            self.persisting.set()
+            await self.release.wait()
+            return await super().append_assistant_message(*args, **kwargs)
+
+    memory = BlockingMemory()
+    sender = SseSender()
+    handler = make_handler(sender, memory)
+    await handler.on_content("完整回答")
+    completing = asyncio.create_task(handler.on_complete())
+
+    await memory.persisting.wait()
+    completing.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await completing
+    cancelled = asyncio.create_task(handler.on_cancelled())
+    memory.release.set()
+    await cancelled
+    body = await drain(sender)
+
+    assert body.count("event: finish") == 1
+    assert "event: cancel" not in body
+    assert body.rstrip().endswith("event: done\ndata: [DONE]")
+    assert memory.appended == [("assistant", "完整回答", "NORMAL", None)]
 
 
 async def test_rewrite_is_shared_by_intent_and_retrieval_without_duplicate_call() -> None:

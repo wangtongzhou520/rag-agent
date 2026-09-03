@@ -9,7 +9,10 @@ from uuid import UUID
 
 from httpx import AsyncClient
 
+from app.main import app
 from app.rag.pipeline.stream_chat import EMPTY_RETRIEVAL_TEXT
+from app.system.auth.deps import require_user
+from app.system.auth.models import LoginUser
 
 
 def parse_events(body: str) -> list[tuple[str, Any]]:
@@ -76,3 +79,29 @@ async def test_blank_question_returns_result_error(client: AsyncClient) -> None:
         "data": None,
         "requestId": response.headers["X-Request-ID"],
     }
+
+
+async def test_stop_route_uses_current_user_and_is_idempotent(client: AsyncClient) -> None:
+    class RecordingTaskManager:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int]] = []
+
+        async def cancel(self, task_id: str, user_id: int) -> bool:
+            self.calls.append((task_id, user_id))
+            return False
+
+    async def current_user() -> LoginUser:
+        return LoginUser(userId=42, username="reader", role="USER")
+
+    manager = RecordingTaskManager()
+    original_manager = app.state.stream_task_manager
+    app.state.stream_task_manager = manager
+    app.dependency_overrides[require_user] = current_user
+    try:
+        response = await client.post("/rag/v3/stop", params={"taskId": "task-1"})
+    finally:
+        app.state.stream_task_manager = original_manager
+        app.dependency_overrides.pop(require_user, None)
+
+    assert response.json()["code"] == "0"
+    assert manager.calls == [("task-1", 42)]

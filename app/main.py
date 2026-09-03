@@ -26,6 +26,7 @@ from app.framework.exceptions import BizException
 from app.framework.ids import new_uuid7
 from app.framework.logging import get_logger, init_logging
 from app.framework.result import ErrorCode, Results
+from app.framework.stream_tasks import StreamTaskManager
 from app.framework.trace_ctx import reset_request_id, set_request_id
 from app.knowledge.router import router as knowledge_router
 from app.knowledge.service import KnowledgeService
@@ -156,6 +157,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         trace=trace_service,
     )
     guidance_settings = settings.rag.guidance
+    stream_task_manager = StreamTaskManager()
     pipeline = StreamChatPipeline(
         memory_service,
         model_runtime.llm,
@@ -172,6 +174,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         scope_resolver=RetrievalScopeResolver(
             confidence_threshold=intent_settings.confidence_threshold
         ),
+        task_manager=stream_task_manager,
     )
 
     app.state.engine = engine
@@ -182,8 +185,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine, redis_client, settings.auth, settings.redis
     )
     app.state.rag_chat_service = RAGChatService(
-        memory_service, pipeline, settings, trace_service
+        memory_service,
+        pipeline,
+        settings,
+        trace=trace_service,
+        task_manager=stream_task_manager,
     )
+    app.state.stream_task_manager = stream_task_manager
     app.state.conversation_service = ConversationService(
         engine, title_max_length=settings.rag.memory.title_max_length
     )

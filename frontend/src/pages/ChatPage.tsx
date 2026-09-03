@@ -51,6 +51,7 @@ export function ChatPage() {
     title,
     turns,
     stream,
+    stopping,
     deepThinking,
     setDeepThinking,
     prepareConversation,
@@ -88,7 +89,12 @@ export function ChatPage() {
     endRef.current?.scrollIntoView({ behavior: busy ? "auto" : "smooth", block: "end" });
   }, [busy, turns]);
 
-  useEffect(() => () => stop(), [stop]);
+  useEffect(
+    () => () => {
+      void stop();
+    },
+    [stop],
+  );
 
   useEffect(() => {
     if (!routeConversationId) return;
@@ -342,7 +348,7 @@ export function ChatPage() {
                           </div>
                         )}
                         {turn.messageStatus === "INTERRUPTED" && (
-                          <p className="answer-status-note">已在当前浏览器中停止接收后续内容。</p>
+                          <p className="answer-status-note">生成已停止，以上为停止前保留的内容。</p>
                         )}
                         {turn.sources && turn.sources.length > 0 && (
                           <button
@@ -388,9 +394,14 @@ export function ChatPage() {
               </button>
               <span>Enter 发送 · Shift + Enter 换行</span>
               {busy ? (
-                <button className="stop-stream-button" type="button" onClick={stop}>
+                <button
+                  className="stop-stream-button"
+                  type="button"
+                  onClick={() => void stop()}
+                  disabled={stopping}
+                >
                   <Square aria-hidden="true" />
-                  停止接收
+                  {stopping ? "正在停止" : "停止生成"}
                 </button>
               ) : (
                 <button className="send-question-button" type="submit" disabled={!draft.trim()}>
@@ -400,7 +411,7 @@ export function ChatPage() {
               )}
             </div>
           </div>
-          <p>停止仅中断当前浏览器连接；服务端任务停止接口将在 F3 接入。</p>
+          <p>停止后保留已生成内容；同一任务的后续模型输出不会继续写入。</p>
         </form>
       </section>
 

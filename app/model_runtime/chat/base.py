@@ -56,6 +56,11 @@ class StreamCancellationHandle:
         if self._task is not None and not self._task.done():
             self._task.cancel()
 
+    async def wait(self) -> None:
+        """等待后台流读取完成，使调用方生命周期覆盖完整 SSE 流。"""
+        if self._task is not None:
+            await self._task
+
 
 class ChatClient(Protocol):
     async def chat(self, request: ChatRequest, target: ModelTarget) -> str: ...
@@ -233,10 +238,11 @@ class AbstractOpenAIStyleChatClient:
                 )
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001 流读取任何异常都转 on_error，由路由层兜底
+        except Exception as exc:
             if handle.cancelled:
                 logger.info("stream interrupted after cancel", provider=self.provider)
                 return
             await callback.on_error(exc)
+            raise
         finally:
             await response.aclose()

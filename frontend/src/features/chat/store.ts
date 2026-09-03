@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import { useAuthStore } from "@/features/auth/store";
-import { streamChat } from "@/features/chat/api";
+import { stopChat, streamChat } from "@/features/chat/api";
 import {
   abortStream,
   createStreamSnapshot,
@@ -18,6 +18,7 @@ interface ChatState {
   title: string;
   turns: ChatTurn[];
   stream: StreamSnapshot;
+  stopping: boolean;
   deepThinking: boolean;
   setDeepThinking: (enabled: boolean) => void;
   prepareConversation: (conversationId: string, title: string) => void;
@@ -28,7 +29,7 @@ interface ChatState {
   ) => void;
   setTitle: (title: string) => void;
   send: (question: string) => Promise<void>;
-  stop: () => void;
+  stop: () => Promise<void>;
   reset: () => void;
 }
 
@@ -78,6 +79,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   title: "新对话",
   turns: [],
   stream: createStreamSnapshot(),
+  stopping: false,
   deepThinking: false,
   setDeepThinking: (deepThinking) => set({ deepThinking }),
   prepareConversation: (conversationId, title) => {
@@ -89,6 +91,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       title,
       turns: [],
       stream: createStreamSnapshot(),
+      stopping: false,
     });
   },
   hydrateConversation: (conversationId, title, messages) =>
@@ -97,6 +100,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       title,
       turns: historyTurns(messages),
       stream: createStreamSnapshot(),
+      stopping: false,
     }),
   setTitle: (title) => set({ title }),
   send: async (rawQuestion) => {
@@ -111,6 +115,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     set((state) => ({
       stream: connecting,
+      stopping: false,
       turns: [
         ...state.turns,
         { id: clientId("user"), role: "user", content: question },
@@ -158,17 +163,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return { stream, turns: updateAssistant(state.turns, stream) };
       });
     } finally {
-      if (requestGeneration === generation) activeController = undefined;
+      if (requestGeneration === generation) {
+        activeController = undefined;
+        set({ stopping: false });
+      }
     }
   },
-  stop: () => {
-    if (!activeController) return;
+  stop: async () => {
+    const controller = activeController;
+    if (!controller || get().stopping) return;
+    const taskId = get().stream.taskId;
+    if (taskId) {
+      set({ stopping: true });
+      try {
+        await stopChat(taskId);
+        return;
+      } catch {
+        // 服务端停止失败时仍断开本地流，连接关闭会触发后端 producer 取消。
+      }
+    }
+
     generation += 1;
-    activeController.abort();
+    controller.abort();
     activeController = undefined;
     set((state) => {
       const stream = abortStream(state.stream);
-      return { stream, turns: updateAssistant(state.turns, stream) };
+      return {
+        stopping: false,
+        stream,
+        turns: updateAssistant(state.turns, stream),
+      };
     });
   },
   reset: () => {
@@ -180,6 +204,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       title: "新对话",
       turns: [],
       stream: createStreamSnapshot(),
+      stopping: false,
     });
   },
 }));

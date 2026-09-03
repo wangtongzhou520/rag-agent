@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 from app.framework.chat_types import ChatMessage, ChatRequest, ChatRole
 from app.framework.logging import get_logger
+from app.framework.stream_tasks import StreamTaskManager
 from app.model_runtime.chat.service import LLMService
 from app.rag.intent.guidance import IntentGuidanceService
 from app.rag.intent.node import SubQuestionIntent
@@ -88,6 +89,7 @@ class StreamChatPipeline:
         *,
         rewriter: QueryRewriter | None = None,
         scope_resolver: RetrievalScopeResolver | None = None,
+        task_manager: StreamTaskManager | None = None,
     ) -> None:
         self._memory = memory
         self._llm = llm
@@ -97,6 +99,7 @@ class StreamChatPipeline:
         self._guidance = guidance
         self._rewriter = rewriter
         self._scope_resolver = scope_resolver or RetrievalScopeResolver()
+        self._task_manager = task_manager
 
     async def execute(self, ctx: StreamChatContext, callback: StreamEventCallback) -> None:
         try:
@@ -189,7 +192,7 @@ class StreamChatPipeline:
             ChatMessage(role=ChatRole.USER, content=ctx.question),
         ]
         request = ChatRequest(messages=messages, thinking=ctx.deep_thinking)
-        await self._llm.stream_chat(request, callback)
+        await self._run_model_stream(ctx.task_id, request, callback)
 
     async def _stream_system_response(
         self, ctx: StreamChatContext, callback: StreamEventCallback
@@ -202,8 +205,10 @@ class StreamChatPipeline:
             *ctx.history,
             ChatMessage(role=ChatRole.USER, content=ctx.question),
         ]
-        await self._llm.stream_chat(
-            ChatRequest(messages=messages, thinking=ctx.deep_thinking), callback
+        await self._run_model_stream(
+            ctx.task_id,
+            ChatRequest(messages=messages, thinking=ctx.deep_thinking),
+            callback,
         )
 
     async def _stream_mcp_response(
@@ -228,6 +233,21 @@ class StreamChatPipeline:
             *ctx.history,
             ChatMessage(role=ChatRole.USER, content=ctx.question),
         ]
-        await self._llm.stream_chat(
-            ChatRequest(messages=messages, thinking=ctx.deep_thinking), callback
+        await self._run_model_stream(
+            ctx.task_id,
+            ChatRequest(messages=messages, thinking=ctx.deep_thinking),
+            callback,
         )
+
+    async def _run_model_stream(
+        self,
+        task_id: str,
+        request: ChatRequest,
+        callback: StreamEventCallback,
+    ) -> None:
+        handle = await self._llm.stream_chat(request, callback)
+        if handle is None:
+            return
+        if self._task_manager is not None:
+            await self._task_manager.bind_cancel(task_id, handle.cancel)
+        await handle.wait()

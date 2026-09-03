@@ -41,6 +41,14 @@ export function deleteConversation(conversationId: string) {
   return request<null>({ method: "DELETE", url: `/conversations/${conversationId}` });
 }
 
+export function stopChat(taskId: string) {
+  return request<null>({
+    method: "POST",
+    url: "/rag/v3/stop",
+    params: { taskId },
+  });
+}
+
 async function responseError(response: Response): Promise<ApiError> {
   let message = `问答请求失败（HTTP ${response.status}）`;
   let code = "HTTP_ERROR";

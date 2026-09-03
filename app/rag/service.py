@@ -6,6 +6,7 @@ from app.framework.config import Settings
 from app.framework.ids import new_uuid7
 from app.framework.logging import get_logger
 from app.framework.sse import MetaPayload, SseEventType, SseSender
+from app.framework.stream_tasks import StreamTaskManager
 from app.framework.trace_ctx import reset_trace_id, set_trace_id
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.pipeline.event_handler import StreamChatEventHandler
@@ -24,11 +25,13 @@ class RAGChatService:
         pipeline: StreamChatPipeline,
         settings: Settings,
         trace: RagTraceRecordService | None = None,
+        task_manager: StreamTaskManager | None = None,
     ) -> None:
         self._memory = memory
         self._pipeline = pipeline
         self._settings = settings
         self._trace = trace
+        self._task_manager = task_manager
 
     async def stream_chat(
         self,
@@ -38,13 +41,14 @@ class RAGChatService:
         deep_thinking: bool,
         user_id: int,
         sender: SseSender,
+        task_id: str | None = None,
     ) -> None:
         is_new_conversation = conversation_id is None
         resolved_conversation_id = conversation_id or new_uuid7()
-        task_id = new_uuid7()
+        resolved_task_id = task_id or new_uuid7()
         trace_data = (
             await self._trace.start_run(
-                resolved_conversation_id, task_id, user_id, question
+                resolved_conversation_id, resolved_task_id, user_id, question
             )
             if self._trace is not None
             else None
@@ -59,15 +63,28 @@ class RAGChatService:
             user_id=user_id,
             is_new_conversation=is_new_conversation,
             chunk_size=self._settings.ai.stream.message_chunk_size,
+            task_id=resolved_task_id,
+            task_manager=self._task_manager,
         )
         ctx = StreamChatContext(
             question=question,
             conversation_id=resolved_conversation_id,
-            task_id=task_id,
+            task_id=resolved_task_id,
             user_id=user_id,
             deep_thinking=deep_thinking,
             is_new_conversation=is_new_conversation,
         )
+        producer = asyncio.current_task()
+
+        async def cancel_producer() -> None:
+            if producer is not None and not producer.done():
+                producer.cancel()
+
+        if self._task_manager is not None:
+            await self._task_manager.register(
+                resolved_task_id, user_id, handler.on_cancelled
+            )
+            await self._task_manager.bind_cancel(resolved_task_id, cancel_producer)
         try:
             async with asyncio.timeout(
                 self._settings.rag.default.sse_timeout_ms / 1000
@@ -75,19 +92,20 @@ class RAGChatService:
                 await sender.send(
                     SseEventType.META,
                     MetaPayload(
-                        conversation_id=resolved_conversation_id, task_id=task_id
+                        conversation_id=resolved_conversation_id,
+                        task_id=resolved_task_id,
                     ),
                 )
                 await self._pipeline.execute(ctx, handler)
         except asyncio.CancelledError:
             trace_status = "ERROR"
             trace_error = "cancelled"
-            await sender.complete()
+            await handler.on_cancelled()
             raise
         except Exception as exc:
             trace_status = "ERROR"
             trace_error = f"{type(exc).__name__}: {exc}"
-            logger.exception("stream chat producer failed", task_id=task_id)
+            logger.exception("stream chat producer failed", task_id=resolved_task_id)
             await sender.fail(exc)
         finally:
             if trace_data and self._trace is not None:
@@ -96,3 +114,8 @@ class RAGChatService:
                 )
             if trace_token is not None:
                 reset_trace_id(trace_token)
+            if (
+                self._task_manager is not None
+                and not self._task_manager.is_cancelled(resolved_task_id)
+            ):
+                await self._task_manager.unregister(resolved_task_id)

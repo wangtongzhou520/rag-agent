@@ -4,6 +4,7 @@
 经 ConversationMemoryService 落库 assistant 消息，再发 finish/cancel 序列。
 """
 
+import asyncio
 import time
 from typing import Protocol
 
@@ -16,6 +17,7 @@ from app.framework.sse import (
     SseEventType,
     SseSender,
 )
+from app.framework.stream_tasks import StreamTaskManager
 from app.model_runtime.chat.base import StreamCallback
 from app.rag.memory.service import ConversationMemoryService
 
@@ -42,6 +44,8 @@ class StreamChatEventHandler:
         user_id: int,
         is_new_conversation: bool,
         chunk_size: int = 5,
+        task_id: str | None = None,
+        task_manager: StreamTaskManager | None = None,
     ) -> None:
         self._sender = sender
         self._memory = memory
@@ -49,43 +53,53 @@ class StreamChatEventHandler:
         self._user_id = user_id
         self._is_new_conversation = is_new_conversation
         self._chunk_size = chunk_size
+        self._task_id = task_id
+        self._task_manager = task_manager
         self._contents: list[str] = []
         self._thinkings: list[str] = []
         self._thinking_start: float | None = None
         self._reply_to_message_id: str | None = None
         self._sources: list[SourceRef] = []
+        self._terminal = False
+        self._terminal_lock = asyncio.Lock()
+        self._terminal_task: asyncio.Task[None] | None = None
+
+    def _accepting(self) -> bool:
+        return not self._terminal and not (
+            self._task_id
+            and self._task_manager
+            and self._task_manager.is_cancelled(self._task_id)
+        )
 
     async def on_content(self, content: str) -> None:
+        if not self._accepting():
+            return
         self._contents.append(content)
         await self._sender.send_message(
             MessageDeltaType.RESPONSE, content, self._chunk_size
         )
 
     async def on_thinking(self, content: str) -> None:
+        if not self._accepting():
+            return
         if not self._thinkings:
             self._thinking_start = time.monotonic()
         self._thinkings.append(content)
         await self._sender.send_message(MessageDeltaType.THINK, content, self._chunk_size)
 
     async def on_reply_to_message_id(self, message_id: str | None) -> None:
+        if not self._accepting():
+            return
         self._reply_to_message_id = message_id
 
     async def on_sources(self, sources: list[SourceRef]) -> None:
+        if not self._accepting():
+            return
         self._sources = list(sources)
 
     async def on_complete(self) -> None:
         """正常完成：assistant 消息 NORMAL 落库，发 finish + done。"""
-        message_id = await self._persist(MessageStatus.NORMAL)
-        await self._sender.send(
-            SseEventType.FINISH,
-            CompletionPayload(
-                message_id=message_id,
-                title="新对话" if self._is_new_conversation else None,
-                sources=self._sources or None,
-                message_status=MessageStatus.NORMAL,
-            ),
-        )
-        await self._sender.done()
+        await self._finish(MessageStatus.NORMAL)
 
     async def on_error(self, error: Exception) -> None:
         """LLM 流异常：不补 finish，由上层 sender.fail 关闭连接（docs/01 §13）。"""
@@ -93,8 +107,42 @@ class StreamChatEventHandler:
 
     async def on_cancelled(self) -> None:
         """取消收尾：已累积内容非空则以 INTERRUPTED 落库（docs/01 §9.2）。"""
-        if self._contents:
-            await self._persist(MessageStatus.INTERRUPTED)
+        await self._finish(MessageStatus.INTERRUPTED)
+
+    async def _finish(self, status: MessageStatus) -> None:
+        """创建唯一且 shield 的终态任务，消除完成与取消并发收尾竞态。"""
+        async with self._terminal_lock:
+            if self._terminal_task is None:
+                if status is MessageStatus.NORMAL and not self._accepting():
+                    return
+                if self._terminal:
+                    return
+                self._terminal = True
+                self._terminal_task = asyncio.create_task(
+                    self._emit_terminal(status),
+                    name=f"stream-terminal:{self._task_id or self._conversation_id}",
+                )
+            terminal_task = self._terminal_task
+        await asyncio.shield(terminal_task)
+
+    async def _emit_terminal(self, status: MessageStatus) -> None:
+        message_id = (
+            await self._persist(status)
+            if status is MessageStatus.NORMAL or self._contents
+            else None
+        )
+        await self._sender.send(
+            SseEventType.FINISH
+            if status is MessageStatus.NORMAL
+            else SseEventType.CANCEL,
+            CompletionPayload(
+                message_id=message_id,
+                title="新对话" if self._is_new_conversation else None,
+                sources=self._sources or None,
+                message_status=status,
+            ),
+        )
+        await self._sender.done()
 
     def _thinking_duration(self) -> int | None:
         if self._thinking_start is None:

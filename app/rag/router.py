@@ -12,6 +12,7 @@ from app.framework.exceptions import ClientException
 from app.framework.ids import new_uuid7
 from app.framework.result import Results
 from app.framework.sse import SseSender
+from app.framework.stream_tasks import StreamTaskManager
 from app.rag.conversation import ConversationService
 from app.rag.schemas import ConversationTitleUpdate
 from app.rag.service import RAGChatService
@@ -69,6 +70,19 @@ async def list_conversation_messages(
     data = await _conversation_service(request).list_messages(conversation_id, user.user_id)
     return Results.success(data).model_dump(by_alias=True)
 
+
+@router.post("/stop")
+async def stop_stream_chat(
+    request: Request,
+    user: Annotated[LoginUser, Depends(require_user)],
+    task_id: Annotated[str, Query(alias="taskId", min_length=1, max_length=128)],
+) -> dict:
+    """幂等停止当前用户的流任务；已结束或非本人任务不暴露额外信息。"""
+    task_manager: StreamTaskManager = request.app.state.stream_task_manager
+    await task_manager.cancel(task_id, user.user_id)
+    return Results.success().model_dump(by_alias=True)
+
+
 @router.get("/chat", response_class=StreamingResponse)
 async def stream_chat(
     request: Request,
@@ -92,6 +106,7 @@ async def stream_chat(
             deep_thinking=deep_thinking,
             user_id=user.user_id,
             sender=sender,
+            task_id=task_id,
         ),
         name=f"stream-chat:{task_id}",
     )
