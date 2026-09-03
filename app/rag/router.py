@@ -137,6 +137,9 @@ async def stream_chat(
     question: Annotated[str, Query(min_length=1, max_length=4000)],
     conversation_id: Annotated[str | None, Query(alias="conversationId")] = None,
     deep_thinking: Annotated[bool, Query(alias="deepThinking")] = False,
+    intent_codes: Annotated[
+        str | None, Query(alias="intentCodes", max_length=1000)
+    ] = None,
 ) -> StreamingResponse:
     """流式问答入口：构造 SseSender 并委托 RAGChatService，协议契约不变。"""
     normalized_question = question.strip()
@@ -146,6 +149,11 @@ async def stream_chat(
     sender = SseSender()
     service: RAGChatService = request.app.state.rag_chat_service
     task_id = new_uuid7()
+    selected_intent_codes = tuple(
+        dict.fromkeys(
+            code.strip() for code in (intent_codes or "").split(",") if code.strip()
+        )
+    )
     producer = asyncio.create_task(
         service.stream_chat(
             question=normalized_question,
@@ -154,6 +162,7 @@ async def stream_chat(
             user_id=user.user_id,
             sender=sender,
             task_id=task_id,
+            selected_intent_codes=selected_intent_codes,
         ),
         name=f"stream-chat:{task_id}",
     )

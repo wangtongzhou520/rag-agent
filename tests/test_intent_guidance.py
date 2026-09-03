@@ -32,6 +32,13 @@ async def test_close_kb_scores_trigger_guidance() -> None:
     assert decision.required is True
     assert "1) 产品 > 标准版" in decision.message
     assert "2) 产品 > 企业版" in decision.message
+    payload = decision.payload("怎么配置")
+    assert [option.intent_code for option in payload.options] == [
+        "topic.1",
+        "topic.2",
+    ]
+    assert payload.options[0].query == "怎么配置（知识范围：产品 > 标准版）"
+    assert payload.all_query == "怎么配置（知识范围：产品 > 标准版、产品 > 企业版）"
 
 
 async def test_clear_winner_or_explicit_name_skips_guidance() -> None:

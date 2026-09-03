@@ -1113,6 +1113,100 @@ textarea {
 .answer-sources-link svg {
   width: 14px;
 }
+.guidance-choice {
+  overflow: hidden;
+  border: 1px solid var(--blue-200);
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 10px 28px rgb(31 95 199 / 7%);
+}
+.guidance-choice__heading {
+  padding: 14px 15px 12px;
+  border-bottom: 1px solid var(--blue-100);
+  background: linear-gradient(105deg, var(--blue-50), white 72%);
+}
+.guidance-choice__heading span {
+  color: var(--blue-700);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.guidance-choice__heading p {
+  margin: 4px 0 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.guidance-choice__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--blue-100);
+}
+.guidance-choice__options button {
+  display: grid;
+  min-height: 62px;
+  grid-template-columns: 25px minmax(0, 1fr) 15px;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 0;
+  color: var(--text-secondary);
+  background: white;
+  text-align: left;
+  cursor: pointer;
+  transition: 140ms ease-out;
+}
+.guidance-choice__options button:hover:not(:disabled) {
+  position: relative;
+  z-index: 1;
+  color: var(--blue-800);
+  background: var(--blue-50);
+  box-shadow: inset 3px 0 0 var(--blue-500);
+}
+.guidance-choice__options button:disabled,
+.guidance-choice__all:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.guidance-choice__options span {
+  color: var(--blue-500);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+.guidance-choice__options strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+}
+.guidance-choice__options svg {
+  width: 14px;
+  color: var(--blue-400);
+}
+.guidance-choice__all {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 9px 13px;
+  border: 0;
+  border-top: 1px solid var(--blue-100);
+  color: var(--text-muted);
+  background: #fbfdff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.guidance-choice__all:hover:not(:disabled) {
+  color: var(--blue-700);
+}
+.guidance-choice__all svg {
+  width: 13px;
+  transform: rotate(45deg);
+}
 .answer-followup {
   margin-top: 20px;
   padding-top: 13px;
@@ -4031,6 +4125,9 @@ textarea {
   .assistant-answer__mark {
     width: 29px;
     height: 29px;
+  }
+  .guidance-choice__options {
+    grid-template-columns: 1fr;
   }
   .user-question {
     max-width: 91%;

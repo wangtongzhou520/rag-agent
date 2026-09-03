@@ -6,6 +6,7 @@ from typing import Protocol
 
 from app.framework.chat_types import ChatMessage, ChatRequest, ChatRole
 from app.framework.logging import get_logger
+from app.framework.sse import GuidanceOption, GuidancePayload
 from app.model_runtime.routing import Tier
 from app.rag.intent.node import IntentKind, NodeScore, SubQuestionIntent
 
@@ -78,6 +79,29 @@ class GuidanceDecision:
     required: bool = False
     message: str = ""
     candidates: tuple[NodeScore, ...] = ()
+
+    def payload(self, question: str) -> GuidancePayload:
+        original = question.strip()
+        labels = [score.node.full_path or score.node.name for score in self.candidates]
+        options = [
+            GuidanceOption(
+                id=score.node.id,
+                intent_code=score.node.intent_code,
+                label=label,
+                query=_scoped_query(original, f"知识范围：{label}"),
+            )
+            for score, label in zip(self.candidates, labels, strict=True)
+        ]
+        return GuidancePayload(
+            prompt="请选择更接近你问题的知识范围",
+            original_question=original,
+            options=options,
+            all_query=(
+                _scoped_query(original, f"知识范围：{'、'.join(labels)}")
+                if len(labels) > 1
+                else None
+            ),
+        )
 
 
 class IntentGuidanceService:
@@ -162,3 +186,8 @@ class IntentGuidanceService:
             key = key or candidate.node.intent_code
             grouped.setdefault(key, candidate)
         return list(grouped.values())
+
+
+def _scoped_query(question: str, suffix: str) -> str:
+    decorated = f"（{suffix}）"
+    return f"{question[: max(0, 4000 - len(decorated))]}{decorated}"

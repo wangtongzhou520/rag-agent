@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp,
   BrainCircuit,
+  CornerDownRight,
   Database,
   ListPlus,
   LoaderCircle,
@@ -342,7 +343,44 @@ export function ChatPage() {
                           phase={turn.streaming ? stream.phase : "completed"}
                           hasAnswer={Boolean(turn.content)}
                         />
-                        {turn.content ? (
+                        {turn.guidance ? (
+                          <section className="guidance-choice" aria-label="选择知识范围">
+                            <div className="guidance-choice__heading">
+                              <span>范围确认</span>
+                              <p>{turn.guidance.prompt}</p>
+                            </div>
+                            <div className="guidance-choice__options">
+                              {turn.guidance.options.map((option, index) => (
+                                <button
+                                  type="button"
+                                  key={option.intentCode}
+                                  disabled={busy}
+                                  onClick={() => void send(option.query, [option.intentCode])}
+                                >
+                                  <span>{String(index + 1).padStart(2, "0")}</span>
+                                  <strong>{option.label}</strong>
+                                  <CornerDownRight aria-hidden="true" />
+                                </button>
+                              ))}
+                            </div>
+                            {turn.guidance.allQuery && (
+                              <button
+                                className="guidance-choice__all"
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  void send(
+                                    turn.guidance?.allQuery || "",
+                                    turn.guidance?.options.map((option) => option.intentCode),
+                                  )
+                                }
+                              >
+                                检索以上全部范围
+                                <ArrowUp aria-hidden="true" />
+                              </button>
+                            )}
+                          </section>
+                        ) : turn.content ? (
                           <MarkdownAnswer onCitation={showSource}>{turn.content}</MarkdownAnswer>
                         ) : turn.error ? null : (
                           <p className="answer-pending">正在理解问题并准备检索…</p>
@@ -366,7 +404,10 @@ export function ChatPage() {
                             查看 {turn.sources.length} 条回答来源
                           </button>
                         )}
-                        {!turn.streaming && turn.persisted && turn.messageStatus === "NORMAL" && (
+                        {!turn.guidance &&
+                          !turn.streaming &&
+                          turn.persisted &&
+                          turn.messageStatus === "NORMAL" && (
                           <div className="answer-followup">
                             <div className="answer-tools" aria-label="回答操作">
                               <span>这个回答有帮助吗</span>

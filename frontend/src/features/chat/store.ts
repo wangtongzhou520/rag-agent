@@ -34,7 +34,7 @@ interface ChatState {
     messages: ConversationMessage[],
   ) => void;
   setTitle: (title: string) => void;
-  send: (question: string) => Promise<void>;
+  send: (question: string, intentCodes?: string[]) => Promise<void>;
   stop: () => Promise<void>;
   voteMessage: (messageId: string, vote: 1 | -1) => Promise<void>;
   loadRecommendations: (messageId: string) => Promise<void>;
@@ -66,6 +66,7 @@ function updateAssistant(turns: ChatTurn[], snapshot: StreamSnapshot): ChatTurn[
     thinking: snapshot.thinking,
     sources: snapshot.sources,
     messageStatus: snapshot.messageStatus,
+    guidance: snapshot.guidance,
     persisted: Boolean(snapshot.messageId) || next[index].persisted,
     error: snapshot.error,
     streaming: ["connecting", "streaming", "finishing"].includes(snapshot.phase),
@@ -125,7 +126,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       stopping: false,
     }),
   setTitle: (title) => set({ title }),
-  send: async (rawQuestion) => {
+  send: async (rawQuestion, intentCodes) => {
     const question = rawQuestion.trim();
     if (!question || activeController) return;
 
@@ -150,6 +151,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         question,
         conversationId: get().conversationId,
         deepThinking: get().deepThinking,
+        intentCodes,
         signal: controller.signal,
       })) {
         if (requestGeneration !== generation) return;

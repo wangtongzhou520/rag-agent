@@ -71,6 +71,7 @@ class StreamChatContext:
     user_id: int
     deep_thinking: bool = False
     is_new_conversation: bool = False
+    selected_intent_codes: tuple[str, ...] = ()
     history: list[ChatMessage] = field(default_factory=list)
     intents: list[SubQuestionIntent] = field(default_factory=list)
 
@@ -118,13 +119,32 @@ class StreamChatPipeline:
                     ctx.intents = await self._intent_resolver.resolve(rewrite_result)
                 except Exception:  # noqa: BLE001
                     ctx.intents = []
+            if ctx.selected_intent_codes:
+                selected = set(ctx.selected_intent_codes)
+                filtered = [
+                    SubQuestionIntent(
+                        intent.sub_question,
+                        tuple(
+                            score
+                            for score in intent.node_scores
+                            if score.node.intent_code in selected
+                        ),
+                    )
+                    for intent in ctx.intents
+                ]
+                filtered = [intent for intent in filtered if intent.node_scores]
+                if filtered:
+                    ctx.intents = filtered
             # ④ 歧义引导命中后直接返回追问；⑤ 纯 SYSTEM 意图不访问知识库
-            if self._guidance is not None:
+            if self._guidance is not None and not ctx.selected_intent_codes:
                 decision = await self._guidance.detect(
                     rewrite_result.rewritten_question, ctx.intents
                 )
                 if decision.required:
                     await callback.on_content(decision.message)
+                    await callback.on_guidance(
+                        decision.payload(rewrite_result.rewritten_question)
+                    )
                     await callback.on_complete()
                     return
             if IntentResolver.is_system_only(ctx.intents):

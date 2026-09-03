@@ -1,4 +1,9 @@
-import type { ChatStreamEvent, MessageStatus, SourceRef } from "@/features/chat/types";
+import type {
+  ChatStreamEvent,
+  GuidancePayload,
+  MessageStatus,
+  SourceRef,
+} from "@/features/chat/types";
 import { StreamProtocolError } from "@/features/chat/sse";
 
 export type StreamPhase =
@@ -14,6 +19,7 @@ export interface StreamSnapshot {
   response: string;
   sources: SourceRef[];
   messageStatus?: MessageStatus;
+  guidance?: GuidancePayload;
   error?: string;
 }
 
@@ -55,6 +61,9 @@ export function transitionStream(
         response: snapshot.response + incoming.data.delta,
         messageStatus: "REJECTED",
       };
+    case "guidance":
+      ensurePhase(snapshot, ["streaming"], "guidance");
+      return { ...snapshot, guidance: incoming.data };
     case "finish":
       ensurePhase(snapshot, ["streaming", "finishing"], "finish");
       return {

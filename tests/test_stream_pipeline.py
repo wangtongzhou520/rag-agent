@@ -8,6 +8,7 @@ from uuid_utils import uuid7
 
 from app.framework.chat_types import ChatMessage, ChatRole
 from app.framework.sse import SseSender
+from app.rag.intent.guidance import IntentGuidanceService
 from app.rag.intent.node import IntentKind, IntentNode, NodeScore, SubQuestionIntent
 from app.rag.mcp.service import McpIntentDispatcher
 from app.rag.memory.store import normalize_history
@@ -145,6 +146,115 @@ async def test_system_intent_streams_without_retrieval() -> None:
 
     assert "你好！" in body
     assert "不要编造知识库来源" in llm.requests[0].messages[0].content
+
+
+async def test_ambiguous_intent_emits_structured_guidance_and_finishes() -> None:
+    class AmbiguousResolver:
+        async def resolve(self, rewrite_result):
+            standard = IntentNode(
+                1,
+                "product.standard",
+                "标准版",
+                2,
+                kind=IntentKind.KB,
+                full_path="产品 > 标准版",
+            )
+            enterprise = IntentNode(
+                2,
+                "product.enterprise",
+                "企业版",
+                2,
+                kind=IntentKind.KB,
+                full_path="产品 > 企业版",
+            )
+            return [
+                SubQuestionIntent(
+                    rewrite_result.rewritten_question,
+                    (NodeScore(standard, 0.9), NodeScore(enterprise, 0.85)),
+                )
+            ]
+
+    class MustNotRetrieve:
+        async def retrieve(self, question: str, **kwargs):
+            raise AssertionError("歧义引导不应进入检索")
+
+    memory = FakeMemory()
+    pipeline = StreamChatPipeline(
+        memory,
+        FakeLLM(),
+        MustNotRetrieve(),
+        AmbiguousResolver(),
+        guidance=IntentGuidanceService(),
+    )
+    sender = SseSender()
+
+    await pipeline.execute(make_ctx(question="怎么配置"), make_handler(sender, memory))
+    body = await drain(sender)
+
+    assert body.index("event: message") < body.index("event: guidance")
+    assert body.index("event: guidance") < body.index("event: finish")
+    assert '"intentCode":"product.standard"' in body
+    assert '"label":"产品 > 企业版"' in body
+    assert '"allQuery":"怎么配置（知识范围：产品 > 标准版、产品 > 企业版）"' in body
+    assert body.rstrip().endswith("event: done\ndata: [DONE]")
+
+
+async def test_selected_guidance_intent_filters_retrieval_scope() -> None:
+    class Resolver:
+        async def resolve(self, rewrite_result):
+            standard = IntentNode(
+                1,
+                "product.standard",
+                "标准版",
+                2,
+                kind=IntentKind.KB,
+                collection_name="kb-standard",
+            )
+            enterprise = IntentNode(
+                2,
+                "product.enterprise",
+                "企业版",
+                2,
+                kind=IntentKind.KB,
+                collection_name="kb-enterprise",
+            )
+            return [
+                SubQuestionIntent(
+                    rewrite_result.rewritten_question,
+                    (NodeScore(standard, 0.9), NodeScore(enterprise, 0.85)),
+                )
+            ]
+
+    class Retrieval:
+        def __init__(self) -> None:
+            self.scope = None
+
+        async def retrieve(self, question, **kwargs):
+            self.scope = kwargs["scope"]
+            return []
+
+    memory = FakeMemory()
+    retrieval = Retrieval()
+    pipeline = StreamChatPipeline(
+        memory,
+        FakeLLM(),
+        retrieval,
+        Resolver(),
+        guidance=IntentGuidanceService(),
+    )
+    sender = SseSender()
+
+    await pipeline.execute(
+        make_ctx(
+            question="怎么配置（知识范围：企业版）",
+            selected_intent_codes=("product.enterprise",),
+        ),
+        make_handler(sender, memory),
+    )
+    body = await drain(sender)
+
+    assert "event: guidance" not in body
+    assert retrieval.scope.collections == ("kb-enterprise",)
 
 
 async def test_mcp_intent_uses_tool_context_without_retrieval() -> None:

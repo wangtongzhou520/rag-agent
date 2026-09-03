@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   completionSchema,
+  guidanceSchema,
   messageDeltaSchema,
   metaSchema,
   type ChatStreamEvent,
@@ -103,6 +104,8 @@ export function decodeChatEvent(frame: SseFrame): ChatStreamEvent {
       return { event: "cancel", data: decodePayload(completionSchema, frame.data, "cancel") };
     case "reject":
       return { event: "reject", data: decodePayload(messageDeltaSchema, frame.data, "reject") };
+    case "guidance":
+      return { event: "guidance", data: decodePayload(guidanceSchema, frame.data, "guidance") };
     case "done":
       if (frame.data !== "[DONE]") throw new StreamProtocolError("done 事件缺少 [DONE] 哨兵");
       return { event: "done", data: "[DONE]" };

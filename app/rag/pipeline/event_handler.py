@@ -11,6 +11,7 @@ from typing import Protocol
 from app.framework.logging import get_logger
 from app.framework.sse import (
     CompletionPayload,
+    GuidancePayload,
     MessageDeltaType,
     MessageStatus,
     SourceRef,
@@ -31,6 +32,7 @@ class StreamEventCallback(StreamCallback, Protocol):
     async def on_cancelled(self) -> None: ...
     async def on_sources(self, sources: list[SourceRef]) -> None: ...
     async def on_grounding_chunks(self, chunks: list[dict]) -> None: ...
+    async def on_guidance(self, payload: GuidancePayload) -> None: ...
 
 
 class StreamChatEventHandler:
@@ -103,6 +105,11 @@ class StreamChatEventHandler:
         if not self._accepting():
             return
         self._grounding_chunks = list(chunks)
+
+    async def on_guidance(self, payload: GuidancePayload) -> None:
+        if not self._accepting():
+            return
+        await self._sender.send(SseEventType.GUIDANCE, payload)
 
     async def on_complete(self) -> None:
         """正常完成：assistant 消息 NORMAL 落库，发 finish + done。"""

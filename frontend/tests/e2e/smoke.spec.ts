@@ -87,6 +87,57 @@ test("streams an answer and opens its source context", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "混合检索" })).toBeVisible();
 });
 
+test("selects a structured ambiguity scope and continues the conversation", async ({ page }) => {
+  let chatRequests = 0;
+  let selectedQuestion = "";
+  let selectedIntentCodes = "";
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/conversations", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(result([])) }),
+  );
+  await page.route("**/api/ragent/conversations/*/messages", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(result([])) }),
+  );
+  await page.route("**/api/ragent/rag/v3/chat?*", (route) => {
+    chatRequests += 1;
+    selectedQuestion = new URL(route.request().url()).searchParams.get("question") || "";
+    selectedIntentCodes =
+      new URL(route.request().url()).searchParams.get("intentCodes") || "";
+    const body =
+      chatRequests === 1
+        ? [
+            'event: meta\ndata: {"conversationId":"guidance-e2e","taskId":"task-guidance"}\n\n',
+            'event: message\ndata: {"type":"response","delta":"这个问题可能对应多个知识范围。"}\n\n',
+            'event: guidance\ndata: {"prompt":"请选择更接近你问题的知识范围","originalQuestion":"怎么配置","options":[{"id":1,"intentCode":"product.standard","label":"产品 > 标准版","query":"怎么配置（知识范围：产品 > 标准版）"},{"id":2,"intentCode":"product.enterprise","label":"产品 > 企业版","query":"怎么配置（知识范围：产品 > 企业版）"}],"allQuery":"怎么配置（知识范围：产品 > 标准版、产品 > 企业版）"}\n\n',
+            'event: finish\ndata: {"messageId":"guidance-message","messageStatus":"NORMAL"}\n\n',
+            "event: done\ndata: [DONE]\n\n",
+          ].join("")
+        : [
+            'event: meta\ndata: {"conversationId":"guidance-e2e","taskId":"task-answer"}\n\n',
+            'event: message\ndata: {"type":"response","delta":"已按企业版范围检索。"}\n\n',
+            'event: finish\ndata: {"messageId":"answer-message","messageStatus":"NORMAL"}\n\n',
+            "event: done\ndata: [DONE]\n\n",
+          ].join("");
+    return route.fulfill({ contentType: "text/event-stream;charset=UTF-8", body });
+  });
+
+  await page.goto("/chat");
+  await page.getByLabel("输入问题").fill("怎么配置");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("请选择更接近你问题的知识范围")).toBeVisible();
+  await page.getByRole("button", { name: /产品 > 企业版/ }).click();
+
+  await expect(page.getByText("已按企业版范围检索。")).toBeVisible();
+  expect(selectedQuestion).toBe("怎么配置（知识范围：产品 > 企业版）");
+  expect(selectedIntentCodes).toBe("product.enterprise");
+});
+
 test("opens, renames and deletes a saved conversation", async ({ page }, testInfo) => {
   const conversationId = "01999111-1111-7111-8111-111111111111";
   const records = [

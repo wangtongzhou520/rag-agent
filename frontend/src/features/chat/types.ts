@@ -27,12 +27,27 @@ export const metaSchema = z.object({
   taskId: z.string().min(1),
 });
 
+export const guidanceOptionSchema = z.object({
+  id: z.number().int().positive(),
+  intentCode: z.string().min(1),
+  label: z.string().min(1),
+  query: z.string().min(1).max(4000),
+});
+
+export const guidanceSchema = z.object({
+  prompt: z.string().min(1),
+  originalQuestion: z.string().min(1),
+  options: z.array(guidanceOptionSchema).min(2).max(6),
+  allQuery: z.string().min(1).max(4000).nullable().optional(),
+});
+
 export type SourceRef = z.infer<typeof sourceRefSchema>;
 export type MessageDelta = z.infer<typeof messageDeltaSchema>;
 export type CompletionPayload = z.infer<typeof completionSchema>;
 export type MetaPayload = z.infer<typeof metaSchema>;
 export type MessageStatus = CompletionPayload["messageStatus"];
 export type RecommendationStatus = "SUCCESS" | "EMPTY" | "FAILED";
+export type GuidancePayload = z.infer<typeof guidanceSchema>;
 
 export type ChatStreamEvent =
   | { event: "meta"; data: MetaPayload }
@@ -40,6 +55,7 @@ export type ChatStreamEvent =
   | { event: "finish"; data: CompletionPayload }
   | { event: "cancel"; data: CompletionPayload }
   | { event: "reject"; data: MessageDelta }
+  | { event: "guidance"; data: GuidancePayload }
   | { event: "done"; data: "[DONE]" };
 
 export interface ChatTurn {
@@ -52,6 +68,7 @@ export interface ChatTurn {
   vote?: 1 | -1 | null;
   recommendedQuestions?: string[] | null;
   recommendationStatus?: RecommendationStatus;
+  guidance?: GuidancePayload;
   feedbackPending?: boolean;
   recommendationPending?: boolean;
   actionError?: string;

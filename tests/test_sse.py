@@ -4,6 +4,8 @@ import json
 
 from app.framework.sse import (
     CompletionPayload,
+    GuidanceOption,
+    GuidancePayload,
     MessageDeltaType,
     MessageStatus,
     MetaPayload,
@@ -45,6 +47,39 @@ def test_encode_sse_uses_camel_case_and_omits_none() -> None:
             }
         ],
         "messageStatus": "NORMAL",
+    }
+
+
+def test_guidance_event_has_structured_options_and_scoped_queries() -> None:
+    payload = GuidancePayload(
+        prompt="请选择知识范围",
+        original_question="怎么配置",
+        options=[
+            GuidanceOption(
+                id=1,
+                intent_code="product.standard",
+                label="产品 > 标准版",
+                query="怎么配置（知识范围：产品 > 标准版）",
+            )
+        ],
+        all_query=None,
+    )
+
+    frame = encode_sse(SseEventType.GUIDANCE, payload)
+    data = json.loads(frame.split("data: ", maxsplit=1)[1])
+
+    assert frame.startswith("event: guidance")
+    assert data == {
+        "prompt": "请选择知识范围",
+        "originalQuestion": "怎么配置",
+        "options": [
+            {
+                "id": 1,
+                "intentCode": "product.standard",
+                "label": "产品 > 标准版",
+                "query": "怎么配置（知识范围：产品 > 标准版）",
+            }
+        ],
     }
 
 

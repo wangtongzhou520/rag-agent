@@ -12,6 +12,7 @@ export interface StreamChatInput {
   question: string;
   conversationId?: string;
   deepThinking: boolean;
+  intentCodes?: string[];
   signal: AbortSignal;
 }
 
@@ -99,6 +100,7 @@ export async function* streamChat(input: StreamChatInput): AsyncGenerator<ChatSt
     deepThinking: String(input.deepThinking),
   });
   if (input.conversationId) params.set("conversationId", input.conversationId);
+  if (input.intentCodes?.length) params.set("intentCodes", input.intentCodes.join(","));
 
   const token = tokenStorage.get();
   const response = await fetch(`${API_BASE_URL}/rag/v3/chat?${params}`, {

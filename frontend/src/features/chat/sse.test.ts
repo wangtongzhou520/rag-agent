@@ -39,4 +39,30 @@ describe("SseParser", () => {
     expect(() => decodeChatEvent({ event: "ping", data: "{}" })).toThrow(StreamProtocolError);
     expect(() => decodeChatEvent({ event: "meta", data: "{}" })).toThrow("meta 事件字段不符合契约");
   });
+
+  it("decodes structured guidance options", () => {
+    const event = decodeChatEvent({
+      event: "guidance",
+      data: JSON.stringify({
+        prompt: "请选择范围",
+        originalQuestion: "怎么配置",
+        options: [
+          { id: 1, intentCode: "a", label: "标准版", query: "标准版怎么配置" },
+          { id: 2, intentCode: "b", label: "企业版", query: "企业版怎么配置" },
+        ],
+      }),
+    });
+
+    expect(event).toEqual({
+      event: "guidance",
+      data: {
+        prompt: "请选择范围",
+        originalQuestion: "怎么配置",
+        options: [
+          { id: 1, intentCode: "a", label: "标准版", query: "标准版怎么配置" },
+          { id: 2, intentCode: "b", label: "企业版", query: "企业版怎么配置" },
+        ],
+      },
+    });
+  });
 });

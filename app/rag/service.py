@@ -42,6 +42,7 @@ class RAGChatService:
         user_id: int,
         sender: SseSender,
         task_id: str | None = None,
+        selected_intent_codes: tuple[str, ...] = (),
     ) -> None:
         is_new_conversation = conversation_id is None
         resolved_conversation_id = conversation_id or new_uuid7()
@@ -73,6 +74,7 @@ class RAGChatService:
             user_id=user_id,
             deep_thinking=deep_thinking,
             is_new_conversation=is_new_conversation,
+            selected_intent_codes=selected_intent_codes,
         )
         producer = asyncio.current_task()
 

@@ -1,4 +1,4 @@
-"""SSE 六事件协议、payload 模型与单写入者发送器。"""
+"""SSE 七事件协议、payload 模型与单写入者发送器。"""
 
 import asyncio
 import json
@@ -30,6 +30,7 @@ class SseEventType(StrEnum):
     FINISH = "finish"
     CANCEL = "cancel"
     REJECT = "reject"
+    GUIDANCE = "guidance"
     DONE = "done"
 
 
@@ -80,6 +81,20 @@ class CompletionPayload(SsePayload):
 class RecommendedQuestionsPayload(SsePayload):
     status: RecommendedQuestionStatus
     questions: list[str] = Field(default_factory=list)
+
+
+class GuidanceOption(SsePayload):
+    id: int
+    intent_code: str
+    label: str
+    query: str
+
+
+class GuidancePayload(SsePayload):
+    prompt: str
+    original_question: str
+    options: list[GuidanceOption]
+    all_query: str | None = None
 
 
 def encode_sse(event: SseEventType, payload: SsePayload | dict[str, Any] | str) -> str:

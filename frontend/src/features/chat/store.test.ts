@@ -107,4 +107,39 @@ describe("chat store server-side stop", () => {
       recommendationPending: false,
     });
   });
+
+  it("attaches streamed guidance to the persisted assistant turn", async () => {
+    apiMocks.streamChat.mockImplementation(async function* () {
+      yield {
+        event: "meta",
+        data: { conversationId: "conversation-1", taskId: "task-1" },
+      };
+      yield { event: "message", data: { type: "response", delta: "请选择范围" } };
+      yield {
+        event: "guidance",
+        data: {
+          prompt: "请选择更接近你问题的知识范围",
+          originalQuestion: "怎么配置",
+          options: [
+            { id: 1, intentCode: "a", label: "标准版", query: "标准版怎么配置" },
+            { id: 2, intentCode: "b", label: "企业版", query: "企业版怎么配置" },
+          ],
+        },
+      };
+      yield { event: "finish", data: { messageId: "message-1", messageStatus: "NORMAL" } };
+      yield { event: "done", data: "[DONE]" };
+    });
+
+    await useChatStore.getState().send("怎么配置");
+
+    const turns = useChatStore.getState().turns;
+    expect(turns[turns.length - 1]).toMatchObject({
+      id: "message-1",
+      persisted: true,
+      guidance: {
+        originalQuestion: "怎么配置",
+        options: [{ intentCode: "a" }, { intentCode: "b" }],
+      },
+    });
+  });
 });
