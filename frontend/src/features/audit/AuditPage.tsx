@@ -103,6 +103,8 @@ export function AuditPage() {
             <option value="KNOWLEDGE_CHUNK">Chunk</option>
             <option value="INTENT_TREE">意图树</option>
             <option value="QUERY_TERM_MAPPING">查询词映射</option>
+            <option value="INGESTION_PIPELINE">Pipeline</option>
+            <option value="INGESTION_TASK">入库任务</option>
           </select>
         </label>
         <label>

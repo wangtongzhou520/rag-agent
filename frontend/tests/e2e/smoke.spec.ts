@@ -1136,3 +1136,166 @@ test("filters trace runs and inspects node output", async ({ page }, testInfo) =
   await expect(page.getByText("最慢")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("trace-detail.png"), fullPage: true });
 });
+
+test("configures pipelines and inspects real task stages", async ({ page }, testInfo) => {
+  const now = Date.parse("2026-09-04T12:00:00.000Z");
+  const pipelines = [
+    {
+      id: 1,
+      name: "标准文档入库",
+      description: "文件获取、解析、分块并写入 pgvector",
+      createdBy: 1,
+      nodes: [
+        { id: 1, nodeId: "fetch", nodeType: "fetcher", settings: {}, nextNodeId: "parse" },
+        {
+          id: 2,
+          nodeId: "parse",
+          nodeType: "parser",
+          settings: { rules: [{ mimeType: "ALL", options: {} }] },
+          nextNodeId: "chunk",
+        },
+        {
+          id: 3,
+          nodeId: "chunk",
+          nodeType: "chunker",
+          settings: { chunkSize: 1024, overlapSize: 128 },
+          nextNodeId: "index",
+        },
+        {
+          id: 4,
+          nodeId: "index",
+          nodeType: "indexer",
+          settings: { metadataFields: [] },
+          nextNodeId: null,
+        },
+      ],
+      createTime: now - 86_400_000,
+      updateTime: now,
+    },
+  ];
+  const runs = [
+    {
+      id: 18,
+      pipelineId: 1,
+      sourceType: "file",
+      sourceFileName: "product-guide.md",
+      status: "completed",
+      chunkCount: 6,
+      logs: [],
+      metadata: {},
+      startedAt: now,
+      completedAt: now + 842,
+      createdBy: 1,
+      createTime: now,
+      updateTime: now + 842,
+    },
+  ];
+  const taskNodes = [
+    {
+      id: 101,
+      taskId: 18,
+      pipelineId: 1,
+      nodeId: "fetch",
+      nodeType: "fetcher",
+      nodeOrder: 1,
+      status: "success",
+      durationMs: 2,
+      message: "已使用上传文件，跳过远程获取",
+      output: { mimeType: "text/markdown", rawBytesLength: 4520 },
+      createTime: now,
+      updateTime: now,
+    },
+    {
+      id: 102,
+      taskId: 18,
+      pipelineId: 1,
+      nodeId: "parse",
+      nodeType: "parser",
+      nodeOrder: 2,
+      status: "success",
+      durationMs: 31,
+      message: "markdown 解析完成，共 24 个内容块",
+      output: { mimeType: "text/markdown", blockCount: 24 },
+      createTime: now,
+      updateTime: now,
+    },
+  ];
+
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/ingestion/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith("/tasks/18/nodes")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result(taskNodes)),
+      });
+    }
+    if (url.pathname.endsWith("/async-tasks")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result({ records: [], total: 0, current: 1, size: 20 })),
+      });
+    }
+    if (url.pathname.endsWith("/tasks") && request.method() === "GET") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result({ records: runs, total: runs.length, current: 1, size: 20 })),
+      });
+    }
+    if (url.pathname.endsWith("/pipelines") && request.method() === "GET") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({ records: pipelines, total: pipelines.length, current: 1, size: 20 }),
+        ),
+      });
+    }
+    if (url.pathname.endsWith("/pipelines") && request.method() === "POST") {
+      const body = request.postDataJSON();
+      pipelines.push({
+        ...body,
+        id: 2,
+        createdBy: 1,
+        createTime: now,
+        updateTime: now,
+      });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result("2")) });
+    }
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/admin/ingestion");
+  await expect(page.getByRole("heading", { name: "Pipeline 与任务" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "标准文档入库" })).toBeVisible();
+  await expect(page.getByText("索引", { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("pipeline-list-desktop.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "新建 Pipeline" }).click();
+  await page.getByRole("dialog").getByText("名称", { exact: true });
+  await page.getByRole("dialog").locator("input").first().fill("仅解析检查");
+  await page.getByRole("button", { name: "保存 Pipeline" }).click();
+  await expect(page.getByRole("heading", { name: "仅解析检查" })).toBeVisible();
+
+  await page.getByRole("button", { name: "调试运行" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "product-guide.md" })).toBeVisible();
+  await page.getByRole("button", { name: "查看任务 18" }).click();
+  await expect(
+    page.getByRole("dialog").getByText("markdown 解析完成，共 24 个内容块"),
+  ).toBeVisible();
+  await page.getByRole("dialog").getByText("输出摘要", { exact: true }).last().click();
+  await expect(page.getByRole("dialog").getByText(/blockCount/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("pipeline-task-detail.png"), fullPage: true });
+
+  await page.getByRole("dialog").press("Escape");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "Pipeline 与任务" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("pipeline-tasks-mobile.png"), fullPage: true });
+});

@@ -16,6 +16,11 @@ const UserPage = lazy(() =>
 const AuditPage = lazy(() =>
   import("@/features/audit/AuditPage").then((module) => ({ default: module.AuditPage })),
 );
+const IngestionPage = lazy(() =>
+  import("@/features/ingestion/IngestionPage").then((module) => ({
+    default: module.IngestionPage,
+  })),
+);
 const DocumentPage = lazy(() =>
   import("@/features/knowledge/DocumentPage").then((module) => ({
     default: module.DocumentPage,
@@ -74,6 +79,10 @@ export function UserRoute() {
 
 export function AuditRoute() {
   return <KnowledgeRoute Page={AuditPage} label="审计日志" />;
+}
+
+export function IngestionRoute() {
+  return <KnowledgeRoute Page={IngestionPage} label="Pipeline 与任务" />;
 }
 
 export function DocumentRoute() {

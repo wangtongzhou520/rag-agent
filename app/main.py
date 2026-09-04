@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 # 导入即注册 t_* 表元数据，供 init_schema 自动建表
 import app.framework.async_task
+import app.ingestion.models
 import app.knowledge.models
 import app.rag.intent.orm
 import app.rag.models
@@ -21,6 +22,8 @@ import app.system.audit.models
 import app.system.user.models
 from app.admin.dashboard import DashboardService
 from app.admin.dashboard import router as dashboard_router
+from app.core.chunk.service import ChunkingService
+from app.core.ingest.kernel import ChunkEmbeddingService
 from app.core.parser.detector import MimeTypeDetector
 from app.core.parser.registry import build_default_registry
 from app.framework.config import Settings, get_settings
@@ -31,6 +34,9 @@ from app.framework.logging import get_logger, init_logging
 from app.framework.result import ErrorCode, Results
 from app.framework.stream_tasks import StreamTaskManager
 from app.framework.trace_ctx import reset_request_id, set_request_id
+from app.ingestion.api import router as ingestion_router
+from app.ingestion.engine.engine import IngestionEngine
+from app.ingestion.service import IngestionService, PipelineVectorWriter
 from app.knowledge.router import router as knowledge_router
 from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
@@ -217,6 +223,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         http_client,
         Path(settings.storage.local_dir),
     )
+    pipeline_writer = PipelineVectorWriter(engine)
+    app.state.ingestion_service = IngestionService(
+        engine,
+        IngestionEngine(
+            MimeTypeDetector(),
+            build_default_registry(),
+            ChunkingService(),
+            ChunkEmbeddingService(model_runtime.embedding),
+            model_runtime.llm,
+            http_client,
+            pipeline_writer.write,
+        ),
+        embedding_model=settings.ai.embedding.default_model or "",
+        dimension=settings.rag.default.dimension,
+    )
     app.state.query_term_mapping_service = query_mapping_service
     app.state.rag_trace_query_service = RagTraceQueryService(engine)
     app.state.intent_tree_service = IntentTreeService(engine, intent_cache)
@@ -283,6 +304,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(user_router)
     app.include_router(audit_router)
+    app.include_router(ingestion_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 

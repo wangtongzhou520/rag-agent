@@ -7,6 +7,7 @@ from io import BytesIO
 from pathlib import Path
 
 import asyncpg
+import httpx
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -31,6 +32,9 @@ from app.framework.exceptions import BizException
 from app.framework.result import ErrorCode, Results
 from app.framework.sse import RecommendedQuestionsPayload, RecommendedQuestionStatus
 from app.framework.task_queue import TaskQueue
+from app.ingestion.engine.engine import IngestionEngine
+from app.ingestion.schemas import DocumentSource, NodeConfig, PipelineCreate, TaskCreate
+from app.ingestion.service import IngestionService
 from app.knowledge.models import (
     VECTOR_DIMENSION,
     KnowledgeBase,
@@ -94,6 +98,11 @@ class DeterministicEmbedding:
 
     async def embed(self, text: str, model_id: str | None = None) -> list[float]:
         return self._vector(text)
+
+
+class UnusedPipelineLLM:
+    async def chat(self, *args, **kwargs) -> str:
+        raise AssertionError("this pipeline does not include an LLM node")
 
 
 @pytest.fixture
@@ -178,6 +187,69 @@ def _pdf_bytes() -> bytes:
     output = BytesIO()
     writer.write(output)
     return output.getvalue()
+
+
+async def test_pipeline_crud_and_synchronous_file_run(
+    integration_engine: AsyncEngine,
+) -> None:
+    http = httpx.AsyncClient()
+
+    async def unused_writer(_context) -> None:
+        raise AssertionError("this pipeline does not include an indexer node")
+
+    runner = IngestionEngine(
+        MimeTypeDetector(),
+        build_default_registry(),
+        ChunkingService(),
+        ChunkEmbeddingService(DeterministicEmbedding()),
+        UnusedPipelineLLM(),
+        http,
+        unused_writer,
+    )
+    service = IngestionService(
+        integration_engine,
+        runner,
+        embedding_model="deterministic-embedding",
+        dimension=VECTOR_DIMENSION,
+    )
+    try:
+        pipeline_id = int(
+            await service.create_pipeline(
+                PipelineCreate(
+                    name="Markdown parser acceptance",
+                    description="integration",
+                    nodes=[
+                        NodeConfig(
+                            nodeId="fetch",
+                            nodeType="fetcher",
+                            nextNodeId="parse",
+                        ),
+                        NodeConfig(nodeId="parse", nodeType="parser"),
+                    ],
+                ),
+                user_id=7,
+            )
+        )
+        result = await service.run_task(
+            TaskCreate(
+                pipelineId=pipeline_id,
+                source=DocumentSource(type="file", fileName="acceptance.md"),
+            ),
+            user_id=7,
+            raw_bytes="# Pipeline 验收\n\n内容已进入解析节点。".encode(),
+        )
+        assert result["status"] == "completed"
+        task = await service.get_task(int(result["taskId"]))
+        nodes = await service.task_nodes(task["id"])
+        assert task["status"] == "completed"
+        assert [node["nodeType"] for node in nodes] == ["fetcher", "parser"]
+        assert nodes[1]["output"]["blockCount"] == 2
+        assert all(isinstance(node["createTime"], int) for node in nodes)
+        page = await service.page_pipelines(1, 20, "Markdown")
+        assert page["total"] == 1
+        assert page["records"][0]["nodes"][0]["nextNodeId"] == "parse"
+    finally:
+        await http.aclose()
 
 
 async def test_redis_container_is_reachable(redis_client: Redis) -> None:

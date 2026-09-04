@@ -1,0 +1,557 @@
+/* Pipeline 与任务：线性执行链与运行日志控制台 */
+.ingestion-header-actions,
+.pipeline-card-actions,
+.ingestion-toolbar,
+.pipeline-task-filter,
+.pipeline-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.ingestion-view-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 30px;
+  padding: 4px;
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: white;
+}
+.ingestion-view-tabs button {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ingestion-view-tabs button:hover {
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.ingestion-view-tabs button.active {
+  color: white;
+  background: var(--blue-600);
+}
+.ingestion-view-tabs svg,
+.pipeline-card-actions svg {
+  width: 15px;
+  height: 15px;
+}
+.pipeline-list-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.pipeline-card {
+  padding: 20px 22px 16px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: white;
+  box-shadow: 0 1px 2px rgb(16 42 86 / 3%);
+}
+.pipeline-card > header,
+.pipeline-card > footer,
+.pipeline-node-editor > header,
+.pipeline-log-list > header,
+.pipeline-log-body > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.pipeline-card > header > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.pipeline-card > header > div:first-child > span,
+.pipeline-card > footer,
+.pipeline-node-editor > header span,
+.pipeline-log-list > header span {
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+.pipeline-card h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+.pipeline-card > p {
+  margin: 7px 0 18px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.pipeline-card-actions > button:not([class]) {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.pipeline-card-actions > button:not([class]):hover {
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.pipeline-flow {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--blue-100);
+  border-radius: 8px;
+  background: var(--surface-blue);
+}
+.pipeline-flow-node {
+  display: flex;
+  min-width: 142px;
+  align-items: center;
+}
+.pipeline-flow-node > span {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--blue-600);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+.pipeline-flow-node > div {
+  display: grid;
+  gap: 1px;
+  margin-left: 9px;
+}
+.pipeline-flow-node strong {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.pipeline-flow-node small {
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.pipeline-flow-node > i {
+  width: 26px;
+  height: 1px;
+  margin: 0 9px;
+  background: var(--blue-300);
+}
+.pipeline-card > footer {
+  margin-top: 12px;
+}
+.pipeline-card > footer time {
+  font-family: inherit;
+}
+.pipeline-task-panel {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: white;
+}
+.pipeline-task-filter {
+  justify-content: flex-end;
+  min-height: 57px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.pipeline-task-filter label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.pipeline-task-filter select,
+.pipeline-editor select,
+.pipeline-run-form select {
+  height: 36px;
+  padding: 0 32px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: none;
+  color: var(--text-primary);
+  background: white;
+  font-size: 12px;
+}
+.pipeline-table-sub,
+.pipeline-table-error {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.pipeline-table-error {
+  max-width: 230px;
+  overflow: hidden;
+  color: var(--danger);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pipeline-status {
+  display: inline-flex;
+  min-width: 55px;
+  height: 23px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: #eef2f7;
+  font-size: 10px;
+  font-weight: 650;
+}
+.pipeline-status--completed,
+.pipeline-status--success {
+  color: #08784b;
+  background: #e7f7f0;
+}
+.pipeline-status--failed {
+  color: #bd323d;
+  background: #fff0f1;
+}
+.pipeline-status--running {
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.pipeline-status--pending,
+.pipeline-status--skipped {
+  color: #98600b;
+  background: #fff7df;
+}
+.pipeline-detail-button {
+  display: inline-grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--blue-700);
+  background: var(--blue-50);
+  cursor: pointer;
+}
+.pipeline-detail-button svg {
+  width: 15px;
+}
+.pipeline-editor-dialog,
+.pipeline-task-detail {
+  width: min(960px, calc(100vw - 32px));
+  max-width: 960px;
+  max-height: min(860px, calc(100vh - 32px));
+  overflow-y: auto;
+}
+.pipeline-editor,
+.pipeline-run-form {
+  display: grid;
+  gap: 18px;
+}
+.pipeline-basic-fields,
+.pipeline-node-fields,
+.pipeline-json-fields,
+.pipeline-run-form {
+  display: grid;
+  gap: 12px;
+}
+.pipeline-basic-fields {
+  grid-template-columns: 0.65fr 1.35fr;
+}
+.pipeline-basic-fields label,
+.pipeline-node-fields label,
+.pipeline-json-fields label,
+.pipeline-run-form label {
+  display: grid;
+  gap: 6px;
+}
+.pipeline-basic-fields label > span,
+.pipeline-node-fields label > span,
+.pipeline-json-fields label > span,
+.pipeline-run-form label > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.pipeline-node-editor {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.pipeline-node-editor > header {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-blue);
+}
+.pipeline-node-editor > header > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.pipeline-node-list {
+  display: grid;
+  padding: 14px;
+}
+.pipeline-node-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+}
+.pipeline-node-sequence {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pipeline-node-sequence span {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--blue-600);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+.pipeline-node-sequence i {
+  width: 1px;
+  min-height: 24px;
+  flex: 1;
+  background: var(--blue-200);
+}
+.pipeline-node-body {
+  margin-bottom: 12px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+}
+.pipeline-node-fields {
+  grid-template-columns: 180px minmax(180px, 1fr) auto;
+  align-items: end;
+}
+.pipeline-node-actions button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: white;
+  cursor: pointer;
+}
+.pipeline-node-actions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.pipeline-node-actions svg {
+  width: 13px;
+}
+.pipeline-json-fields {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 12px;
+}
+.pipeline-json-fields textarea {
+  min-height: 112px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: none;
+  color: var(--blue-950);
+  background: #f9fbfe;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.pipeline-json-fields textarea:focus {
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 9%);
+}
+.pipeline-form-error,
+.pipeline-run-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  background: #fff4f5;
+  font-size: 11px;
+}
+.pipeline-run-dialog {
+  max-width: 560px;
+}
+.pipeline-run-form {
+  grid-template-columns: 1fr 1fr;
+}
+.pipeline-run-form > p,
+.pipeline-run-form > div:last-child,
+.pipeline-file-field {
+  grid-column: 1 / -1;
+}
+.pipeline-run-form > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.pipeline-file-field input {
+  min-height: 42px;
+  padding: 7px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface-blue);
+  font-size: 11px;
+}
+.pipeline-task-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.pipeline-task-summary > div {
+  display: grid;
+  gap: 7px;
+  padding: 13px;
+}
+.pipeline-task-summary > div + div {
+  border-left: 1px solid var(--border);
+}
+.pipeline-task-summary dt {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.pipeline-task-summary dd {
+  margin: 0;
+  font-size: 11px;
+}
+.pipeline-log-list {
+  margin-top: 18px;
+}
+.pipeline-log-list > header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.pipeline-log-list > article {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 9px;
+  padding-top: 12px;
+}
+.pipeline-log-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pipeline-log-rail span {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--blue-700);
+  background: var(--blue-100);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+.pipeline-log-rail i {
+  width: 1px;
+  flex: 1;
+  background: var(--border);
+}
+.pipeline-log-body {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.pipeline-log-body header > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pipeline-log-body header small,
+.pipeline-log-body header div:last-child > span:last-child {
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+.pipeline-log-body > p {
+  margin: 9px 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.pipeline-log-body details {
+  font-size: 10px;
+}
+.pipeline-log-body summary {
+  color: var(--blue-700);
+  cursor: pointer;
+}
+.pipeline-log-body pre {
+  overflow: auto;
+  max-height: 230px;
+  margin: 9px 0 0;
+  padding: 10px;
+  border-radius: 6px;
+  color: var(--blue-950);
+  background: #f5f8fc;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 760px) {
+  .ingestion-page-header,
+  .ingestion-header-actions {
+    width: 100%;
+    align-items: stretch;
+  }
+  .ingestion-view-tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .ingestion-view-tabs button {
+    flex: 1 0 auto;
+    justify-content: center;
+  }
+  .pipeline-card > header {
+    align-items: flex-start;
+  }
+  .pipeline-card-actions > button:first-child {
+    width: 34px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+  }
+  .pipeline-basic-fields,
+  .pipeline-json-fields,
+  .pipeline-run-form,
+  .pipeline-task-summary {
+    grid-template-columns: 1fr;
+  }
+  .pipeline-node-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .pipeline-node-actions {
+    grid-column: 1 / -1;
+  }
+  .pipeline-task-summary > div + div {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
