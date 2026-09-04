@@ -56,11 +56,17 @@ from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
 from app.rag.rewrite.models import QueryTermMapping
 from app.rag.rewrite.term_mapping import QueryTermMappingService
+from app.system.audit.router import router as audit_router
+from app.system.audit.service import AuditQueryService, AuditRecordService
+from app.system.auth.deps import require_admin, require_user
 from app.system.auth.jwt import decode_token
+from app.system.auth.models import LoginUser
 from app.system.auth.password import hash_password
 from app.system.auth.router import router as auth_router
 from app.system.auth.service import AuthService
 from app.system.user.models import User
+from app.system.user.router import router as user_router
+from app.system.user.service import UserService
 
 pytestmark = pytest.mark.integration
 
@@ -535,6 +541,87 @@ async def test_jwt_login_redis_session_and_logout(
 
             expired = await client.get("/user/me", headers={"Authorization": token})
             assert expired.json()["code"] == str(ErrorCode.UNAUTHORIZED)
+    finally:
+        keys = [key async for key in redis_client.scan_iter(f"{prefix}*")]
+        if keys:
+            await redis_client.delete(*keys)
+
+
+async def test_user_management_writes_audit_and_invalidates_sessions(
+    integration_engine: AsyncEngine, redis_client: Redis
+) -> None:
+    prefix = f"ragent:integration:user:{uuid.uuid4().hex}:"
+    settings = get_settings()
+    redis_settings = settings.redis.model_copy(update={"key_prefix": prefix})
+    auth = AuthService(integration_engine, redis_client, settings.auth, redis_settings)
+    users = UserService(integration_engine, auth)
+    api = FastAPI()
+    api.state.user_service = users
+    api.state.audit_record_service = AuditRecordService(integration_engine)
+    api.state.audit_query_service = AuditQueryService(integration_engine)
+
+    async def admin_user(request: Request) -> LoginUser:
+        user = LoginUser(userId=999, username="integration-admin", role="ADMIN")
+        request.state.current_user = user
+        return user
+
+    current_user_id = 0
+
+    async def current_user(request: Request) -> LoginUser:
+        user = LoginUser(userId=current_user_id, username="managed-user", role="USER")
+        request.state.current_user = user
+        return user
+
+    api.dependency_overrides[require_admin] = admin_user
+    api.dependency_overrides[require_user] = current_user
+    api.include_router(user_router)
+    api.include_router(audit_router)
+    transport = ASGITransport(app=api, raise_app_exceptions=True)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://integration") as client:
+            created = await client.post(
+                "/users",
+                json={"username": "managed-user", "password": "initial-secret", "role": "user"},
+            )
+            assert created.json()["code"] == str(ErrorCode.SUCCESS)
+            current_user_id = int(created.json()["data"])
+
+            session_key = f"{prefix}auth:session:test-jti"
+            index_key = f"{prefix}auth:user-sessions:{current_user_id}"
+            await redis_client.set(session_key, "active")
+            await redis_client.sadd(index_key, "test-jti")
+            updated = await client.put(
+                f"/users/{current_user_id}",
+                json={"password": "updated-secret", "role": "admin"},
+            )
+            assert updated.json()["code"] == str(ErrorCode.SUCCESS)
+            assert await redis_client.exists(session_key) == 0
+            assert await redis_client.exists(index_key) == 0
+
+            changed = await client.put(
+                "/user/password",
+                json={"currentPassword": "updated-secret", "newPassword": "final-secret"},
+            )
+            assert changed.json()["code"] == str(ErrorCode.SUCCESS)
+
+            listing = await client.get("/users", params={"keyword": "managed"})
+            record = listing.json()["data"]["records"][0]
+            assert record["role"] == "admin"
+            assert isinstance(record["createTime"], int)
+
+            logs = await client.get("/biz-change-logs", params={"bizType": "USER"})
+            payload = logs.json()["data"]
+            assert payload["total"] == 3
+            assert {item["actionDesc"] for item in payload["records"]} == {
+                "创建用户：managed-user",
+                "更新用户",
+                "修改本人密码",
+            }
+            assert "passwordHash" not in str(payload["records"])
+
+            deleted = await client.delete(f"/users/{current_user_id}")
+            assert deleted.json()["code"] == str(ErrorCode.SUCCESS)
+            assert (await users.page(1, 20))["total"] == 0
     finally:
         keys = [key async for key in redis_client.scan_iter(f"{prefix}*")]
         if keys:

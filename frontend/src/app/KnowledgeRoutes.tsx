@@ -10,6 +10,12 @@ const DashboardPage = lazy(() =>
     default: module.DashboardPage,
   })),
 );
+const UserPage = lazy(() =>
+  import("@/features/users/UserPage").then((module) => ({ default: module.UserPage })),
+);
+const AuditPage = lazy(() =>
+  import("@/features/audit/AuditPage").then((module) => ({ default: module.AuditPage })),
+);
 const DocumentPage = lazy(() =>
   import("@/features/knowledge/DocumentPage").then((module) => ({
     default: module.DocumentPage,
@@ -60,6 +66,14 @@ export function KnowledgeBaseRoute() {
 
 export function DashboardRoute() {
   return <KnowledgeRoute Page={DashboardPage} label="系统概览" />;
+}
+
+export function UserRoute() {
+  return <KnowledgeRoute Page={UserPage} label="用户管理" />;
+}
+
+export function AuditRoute() {
+  return <KnowledgeRoute Page={AuditPage} label="审计日志" />;
 }
 
 export function DocumentRoute() {

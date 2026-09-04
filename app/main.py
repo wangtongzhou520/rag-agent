@@ -17,6 +17,7 @@ import app.knowledge.models
 import app.rag.intent.orm
 import app.rag.models
 import app.rag.rewrite.orm
+import app.system.audit.models
 import app.system.user.models
 from app.admin.dashboard import DashboardService
 from app.admin.dashboard import router as dashboard_router
@@ -64,8 +65,12 @@ from app.rag.service import RAGChatService
 from app.rag.trace.query import RagTraceQueryService
 from app.rag.trace.record import RagTraceRecordService
 from app.rag.trace.router import router as trace_router
+from app.system.audit.router import router as audit_router
+from app.system.audit.service import AuditQueryService, AuditRecordService
 from app.system.auth.router import router as auth_router
 from app.system.auth.service import AuthService
+from app.system.user.router import router as user_router
+from app.system.user.service import UserService
 
 logger = get_logger(__name__)
 
@@ -185,9 +190,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.redis = redis_client
     app.state.http = http_client
     app.state.model_runtime = model_runtime
-    app.state.auth_service = AuthService(
+    auth_service = AuthService(
         engine, redis_client, settings.auth, settings.redis
     )
+    app.state.auth_service = auth_service
     app.state.rag_chat_service = RAGChatService(
         memory_service,
         pipeline,
@@ -215,6 +221,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.rag_trace_query_service = RagTraceQueryService(engine)
     app.state.intent_tree_service = IntentTreeService(engine, intent_cache)
     app.state.dashboard_service = DashboardService(engine)
+    app.state.audit_record_service = AuditRecordService(engine)
+    app.state.audit_query_service = AuditQueryService(engine)
+    app.state.user_service = UserService(engine, auth_service)
     logger.info("app started", root_path=settings.server.root_path)
 
     try:
@@ -272,6 +281,8 @@ def create_app() -> FastAPI:
     app.include_router(intent_router)
     app.include_router(trace_router)
     app.include_router(dashboard_router)
+    app.include_router(user_router)
+    app.include_router(audit_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 

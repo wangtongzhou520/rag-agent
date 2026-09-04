@@ -6,6 +6,8 @@ import {
   LayoutDashboard,
   LogOut,
   Replace,
+  ScrollText,
+  UsersRound,
 } from "lucide-react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 
@@ -20,6 +22,8 @@ const modules = [
   [GitBranch, "意图树", "/admin/intent-tree"],
   [Replace, "查询词映射", "/admin/mappings"],
   [Activity, "RAG Trace", "/admin/traces"],
+  [UsersRound, "用户管理", "/admin/users"],
+  [ScrollText, "审计日志", "/admin/audit-logs"],
 ] as const;
 
 export function ConsoleLayout() {

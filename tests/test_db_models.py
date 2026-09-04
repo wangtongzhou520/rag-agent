@@ -6,6 +6,7 @@ from sqlalchemy import BigInteger, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 
 import app.rag.models
+import app.system.audit.models
 from app.framework.db import Base
 
 TABLES = ("t_conversation", "t_message", "t_conversation_summary", "t_message_feedback")
@@ -77,3 +78,12 @@ def test_feedback_structure():
     assert ("message_id", "user_id") in uniques
     assert table.c.reason.type.length == 255
     assert table.c.comment.type.length == 1024
+
+
+def test_business_change_log_structure():
+    table = Base.metadata.tables["t_biz_change_log"]
+    assert table.c.biz_type.type.length == 64
+    assert isinstance(table.c.before_snapshot.type, JSONB)
+    assert isinstance(table.c.after_snapshot.type, JSONB)
+    assert isinstance(table.c.change_diff.type, JSONB)
+    assert table.c.user_agent.type.length == 512

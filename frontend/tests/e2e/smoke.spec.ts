@@ -116,6 +116,145 @@ test("shows real dashboard metrics and switches the trend scope", async ({ page 
   await page.screenshot({ path: testInfo.outputPath("dashboard-mobile.png"), fullPage: true });
 });
 
+test("manages users and inspects their audit trail", async ({ page }, testInfo) => {
+  const now = Date.parse("2026-09-04T10:30:00.000Z");
+  const users = [
+    {
+      id: 1,
+      username: "admin",
+      role: "admin",
+      avatar: null,
+      createTime: now - 86_400_000,
+      updateTime: now,
+    },
+    {
+      id: 2,
+      username: "reader",
+      role: "user",
+      avatar: null,
+      createTime: now - 43_200_000,
+      updateTime: now,
+    },
+  ];
+  const audits = [
+    {
+      id: 11,
+      bizType: "USER",
+      bizId: "3",
+      operationType: "CREATE",
+      actionDesc: "创建用户：zhangsan",
+      beforeSnapshot: null,
+      afterSnapshot: { id: 3, username: "zhangsan", role: "user" },
+      changeDiff: [
+        { field: "/", before: null, after: { id: 3, username: "zhangsan", role: "user" } },
+      ],
+      operatorId: "1",
+      operatorName: "admin",
+      operatorRole: "ADMIN",
+      success: true,
+      errorMessage: null,
+      className: "app.system.user.router",
+      methodName: "create_user",
+      ip: "127.0.0.1",
+      userAgent: "Playwright",
+      createTime: now,
+    },
+  ];
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/users**", (route) => {
+    const request = route.request();
+    const id = Number(new URL(request.url()).pathname.split("/").pop());
+    if (request.method() === "POST") {
+      const body = request.postDataJSON() as { username: string; role: "admin" | "user" };
+      users.push({
+        id: 3,
+        username: body.username,
+        role: body.role,
+        avatar: null,
+        createTime: now,
+        updateTime: now,
+      });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result("3")) });
+    }
+    if (request.method() === "PUT") {
+      const target = users.find((item) => item.id === id);
+      if (target) Object.assign(target, request.postDataJSON(), { updateTime: now + 1_000 });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    if (request.method() === "DELETE") {
+      users.splice(
+        users.findIndex((item) => item.id === id),
+        1,
+      );
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    const keyword = new URL(request.url()).searchParams.get("keyword") || "";
+    const records = users.filter(
+      (item) => item.username.includes(keyword) || item.role.includes(keyword),
+    );
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(
+        result({ records, total: records.length, current: 1, size: 20, pages: 1 }),
+      ),
+    });
+  });
+  await page.route("**/api/ragent/biz-change-logs**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const detail = path.match(/biz-change-logs\/(\d+)$/);
+    if (detail) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result(audits.find((item) => item.id === Number(detail[1])))),
+      });
+    }
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(
+        result({ records: audits, total: audits.length, current: 1, size: 20, pages: 1 }),
+      ),
+    });
+  });
+
+  await page.goto("/admin/users");
+  await expect(page.getByRole("heading", { name: "用户管理" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "编辑 admin" })).toBeDisabled();
+  await page.getByRole("button", { name: "新建用户" }).click();
+  await page.getByLabel("用户名").fill("zhangsan");
+  await page.getByLabel("初始密码").fill("initial-secret");
+  await page.getByRole("button", { name: "保存用户" }).click();
+  await expect(page.getByText("zhangsan")).toBeVisible();
+  await page.getByRole("button", { name: "编辑 zhangsan" }).click();
+  await page.getByLabel("角色").selectOption("admin");
+  await page.getByRole("button", { name: "保存用户" }).click();
+  await expect(
+    page.getByRole("row").filter({ hasText: "zhangsan" }).getByText("管理员"),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("user-management.png"), fullPage: true });
+
+  await page.getByRole("link", { name: "审计日志" }).click();
+  await page.getByLabel("业务类型").selectOption("USER");
+  await page.getByLabel("操作人").fill("admin");
+  await page.getByRole("button", { name: "查询" }).click();
+  await expect(page).toHaveURL(/bizType=USER/);
+  await expect(page.getByText("创建用户：zhangsan")).toBeVisible();
+  await page.getByRole("button", { name: "查看审计 11" }).click();
+  await expect(page.getByRole("heading", { name: "变更详情" })).toBeVisible();
+  await expect(page.getByText(/app\.system\.user\.router/)).toBeVisible();
+  await expect(page.getByText(/zhangsan/).last()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("audit-detail.png"), fullPage: true });
+  await page.getByRole("button", { name: "关闭对话框" }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "审计日志" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("audit-mobile.png"), fullPage: true });
+});
+
 test("streams an answer and opens its source context", async ({ page }) => {
   const feedbackRequests: Array<{ method: string; vote?: number }> = [];
   await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));

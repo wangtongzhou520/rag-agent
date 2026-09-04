@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { ChatRoute } from "@/app/ChatRoute";
 import {
+  AuditRoute,
   ChunkRoute,
   DashboardRoute,
   DocumentRoute,
@@ -10,6 +11,7 @@ import {
   MappingRoute,
   TraceDetailRoute,
   TraceListRoute,
+  UserRoute,
 } from "@/app/KnowledgeRoutes";
 import { HomeRedirect, RequireAdmin, RequireAuth, SessionBootstrap } from "@/app/RouteGuards";
 import { ConsoleLayout } from "@/layouts/ConsoleLayout";
@@ -67,6 +69,8 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: "dashboard", element: <DashboardRoute /> },
+      { path: "users", element: <UserRoute /> },
+      { path: "audit-logs", element: <AuditRoute /> },
       { path: "knowledge-bases", element: <KnowledgeBaseRoute /> },
       { path: "knowledge-bases/:kbId/documents", element: <DocumentRoute /> },
       { path: "documents/:docId/chunks", element: <ChunkRoute /> },

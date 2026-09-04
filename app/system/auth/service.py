@@ -99,3 +99,12 @@ class AuthService:
         user_id, jti = decode_token(token, self._settings.jwt_secret)
         await self._redis.delete(f"{self._prefix}auth:session:{jti}")
         await self._redis.srem(f"{self._prefix}auth:user-sessions:{user_id}", jti)
+
+    async def invalidate_user_sessions(self, user_id: int) -> None:
+        """角色、身份或密码变化后立即注销该用户全部 token。"""
+        user_sessions = f"{self._prefix}auth:user-sessions:{user_id}"
+        session_ids = await self._redis.smembers(user_sessions)
+        keys = [f"{self._prefix}auth:session:{jti}" for jti in session_ids]
+        if keys:
+            await self._redis.delete(*keys)
+        await self._redis.delete(user_sessions)

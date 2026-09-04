@@ -16,6 +16,7 @@ from app.system.auth.deps import require_admin, require_user
 from app.system.auth.jwt import decode_token, encode_token
 from app.system.auth.models import LoginUser
 from app.system.auth.password import hash_password, verify_password
+from app.system.user.router import router as user_router
 
 
 def test_password_hash_round_trip() -> None:
@@ -66,6 +67,7 @@ async def test_regular_user_cannot_access_management_routes(client: AsyncClient)
             "/mappings",
             "/rag/traces/runs",
             "/admin/dashboard/overview",
+            "/users",
         ):
             response = await client.get(path)
             assert response.json()["code"] == str(ErrorCode.FORBIDDEN), path
@@ -100,11 +102,20 @@ def test_all_management_routes_declare_admin_guard() -> None:
         "/knowledge-base/docs/{doc_id}/file",
     }
     checked = 0
-    for router in (knowledge_router, intent_router, rewrite_router, trace_router, dashboard_router):
+    for router in (
+        knowledge_router,
+        intent_router,
+        rewrite_router,
+        trace_router,
+        dashboard_router,
+        user_router,
+    ):
         for route in router.routes:
             assert isinstance(route, APIRoute)
             calls = {dependency.call for dependency in route.dependant.dependencies}
-            if router is knowledge_router and route.path in public_knowledge_paths:
+            if (router is knowledge_router and route.path in public_knowledge_paths) or (
+                router is user_router and route.path == "/user/password"
+            ):
                 assert require_admin not in calls
                 assert require_user in calls
             else:

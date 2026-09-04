@@ -1,10 +1,11 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp,
   BrainCircuit,
   CornerDownRight,
   Database,
   ListPlus,
+  KeyRound,
   LoaderCircle,
   LogOut,
   Menu,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 
 import { useAuthStore } from "@/features/auth/store";
 import { DocumentPreviewDialog } from "@/features/chat/DocumentPreviewDialog";
@@ -27,6 +29,8 @@ import { SourcePanel } from "@/features/chat/SourcePanel";
 import { ThinkingPanel } from "@/features/chat/ThinkingPanel";
 import { useChatStore } from "@/features/chat/store";
 import type { SourceRef } from "@/features/chat/types";
+import { changePassword } from "@/features/users/api";
+import { PasswordDialog } from "@/features/users/PasswordDialog";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/Button";
@@ -50,7 +54,7 @@ export function ChatPage() {
   const navigate = useNavigate();
   const { conversationId: routeConversationId } = useParams();
   const queryClient = useQueryClient();
-  const { user, logout } = useAuthStore();
+  const { user, logout, clear: clearAuth } = useAuthStore();
   const {
     conversationId,
     title,
@@ -73,6 +77,16 @@ export function ChatPage() {
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [selectedSource, setSelectedSource] = useState<number>();
   const [previewSource, setPreviewSource] = useState<SourceRef>();
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const password = useMutation({
+    mutationFn: changePassword,
+    onSuccess: () => {
+      toast.success("密码已修改，请重新登录");
+      setPasswordOpen(false);
+      window.setTimeout(clearAuth, 500);
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "密码修改失败"),
+  });
   const endRef = useRef<HTMLDivElement>(null);
   const busy = ["connecting", "streaming", "finishing"].includes(stream.phase);
   const conversationsQuery = useQuery({
@@ -236,16 +250,21 @@ export function ChatPage() {
             <strong>{user?.username}</strong>
             <small>{user?.role === "admin" ? "管理员" : "用户"}</small>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              reset();
-              void logout();
-            }}
-            aria-label="退出登录"
-          >
-            <LogOut aria-hidden="true" />
-          </button>
+          <div className="chat-sidebar__user-actions">
+            <button type="button" onClick={() => setPasswordOpen(true)} aria-label="修改密码">
+              <KeyRound aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                reset();
+                void logout();
+              }}
+              aria-label="退出登录"
+            >
+              <LogOut aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </aside>
       {navigationOpen && (
@@ -408,70 +427,71 @@ export function ChatPage() {
                           !turn.streaming &&
                           turn.persisted &&
                           turn.messageStatus === "NORMAL" && (
-                          <div className="answer-followup">
-                            <div className="answer-tools" aria-label="回答操作">
-                              <span>这个回答有帮助吗</span>
-                              <button
-                                type="button"
-                                className={cn(turn.vote === 1 && "is-active")}
-                                aria-label="赞同回答"
-                                aria-pressed={turn.vote === 1}
-                                disabled={turn.feedbackPending}
-                                onClick={() => void voteMessage(turn.id, 1)}
-                              >
-                                <ThumbsUp aria-hidden="true" />
-                              </button>
-                              <button
-                                type="button"
-                                className={cn(turn.vote === -1 && "is-active", "is-negative")}
-                                aria-label="不赞同回答"
-                                aria-pressed={turn.vote === -1}
-                                disabled={turn.feedbackPending}
-                                onClick={() => void voteMessage(turn.id, -1)}
-                              >
-                                <ThumbsDown aria-hidden="true" />
-                              </button>
-                              {turn.recommendedQuestions == null && (
+                            <div className="answer-followup">
+                              <div className="answer-tools" aria-label="回答操作">
+                                <span>这个回答有帮助吗</span>
                                 <button
                                   type="button"
-                                  className="answer-tools__recommend"
-                                  disabled={turn.recommendationPending}
-                                  onClick={() => void loadRecommendations(turn.id)}
+                                  className={cn(turn.vote === 1 && "is-active")}
+                                  aria-label="赞同回答"
+                                  aria-pressed={turn.vote === 1}
+                                  disabled={turn.feedbackPending}
+                                  onClick={() => void voteMessage(turn.id, 1)}
                                 >
-                                  {turn.recommendationPending ? (
-                                    <LoaderCircle className="is-spinning" aria-hidden="true" />
-                                  ) : (
-                                    <ListPlus aria-hidden="true" />
-                                  )}
-                                  {turn.recommendationPending ? "正在生成" : "后续问题"}
+                                  <ThumbsUp aria-hidden="true" />
                                 </button>
-                              )}
-                            </div>
-                            {turn.recommendedQuestions && turn.recommendedQuestions.length > 0 && (
-                              <div className="recommended-questions">
-                                <span>接着问</span>
-                                {turn.recommendedQuestions.map((question) => (
+                                <button
+                                  type="button"
+                                  className={cn(turn.vote === -1 && "is-active", "is-negative")}
+                                  aria-label="不赞同回答"
+                                  aria-pressed={turn.vote === -1}
+                                  disabled={turn.feedbackPending}
+                                  onClick={() => void voteMessage(turn.id, -1)}
+                                >
+                                  <ThumbsDown aria-hidden="true" />
+                                </button>
+                                {turn.recommendedQuestions == null && (
                                   <button
                                     type="button"
-                                    key={question}
-                                    onClick={() => askExample(question)}
+                                    className="answer-tools__recommend"
+                                    disabled={turn.recommendationPending}
+                                    onClick={() => void loadRecommendations(turn.id)}
                                   >
-                                    {question}
-                                    <ArrowUp aria-hidden="true" />
+                                    {turn.recommendationPending ? (
+                                      <LoaderCircle className="is-spinning" aria-hidden="true" />
+                                    ) : (
+                                      <ListPlus aria-hidden="true" />
+                                    )}
+                                    {turn.recommendationPending ? "正在生成" : "后续问题"}
                                   </button>
-                                ))}
+                                )}
                               </div>
-                            )}
-                            {turn.recommendationStatus === "EMPTY" && (
-                              <p className="answer-action-note">当前回答没有合适的后续问题。</p>
-                            )}
-                            {turn.actionError && (
-                              <p className="answer-action-note answer-action-note--error">
-                                {turn.actionError}
-                              </p>
-                            )}
-                          </div>
-                        )}
+                              {turn.recommendedQuestions &&
+                                turn.recommendedQuestions.length > 0 && (
+                                  <div className="recommended-questions">
+                                    <span>接着问</span>
+                                    {turn.recommendedQuestions.map((question) => (
+                                      <button
+                                        type="button"
+                                        key={question}
+                                        onClick={() => askExample(question)}
+                                      >
+                                        {question}
+                                        <ArrowUp aria-hidden="true" />
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              {turn.recommendationStatus === "EMPTY" && (
+                                <p className="answer-action-note">当前回答没有合适的后续问题。</p>
+                              )}
+                              {turn.actionError && (
+                                <p className="answer-action-note answer-action-note--error">
+                                  {turn.actionError}
+                                </p>
+                              )}
+                            </div>
+                          )}
                       </div>
                     </div>
                   )}
@@ -536,6 +556,12 @@ export function ChatPage() {
         onClose={() => setSourceOpen(false)}
       />
       <DocumentPreviewDialog source={previewSource} onClose={() => setPreviewSource(undefined)} />
+      <PasswordDialog
+        open={passwordOpen}
+        busy={password.isPending}
+        onClose={() => setPasswordOpen(false)}
+        onSubmit={(value) => password.mutate(value)}
+      />
       {sourceOpen && (
         <button
           className="source-panel-backdrop"
