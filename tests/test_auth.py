@@ -4,6 +4,7 @@ import pytest
 from fastapi.routing import APIRoute
 from httpx import AsyncClient
 
+from app.admin.dashboard import router as dashboard_router
 from app.framework.exceptions import ClientException
 from app.framework.result import ErrorCode
 from app.knowledge.router import router as knowledge_router
@@ -64,6 +65,7 @@ async def test_regular_user_cannot_access_management_routes(client: AsyncClient)
             "/intent-tree/trees",
             "/mappings",
             "/rag/traces/runs",
+            "/admin/dashboard/overview",
         ):
             response = await client.get(path)
             assert response.json()["code"] == str(ErrorCode.FORBIDDEN), path
@@ -98,7 +100,7 @@ def test_all_management_routes_declare_admin_guard() -> None:
         "/knowledge-base/docs/{doc_id}/file",
     }
     checked = 0
-    for router in (knowledge_router, intent_router, rewrite_router, trace_router):
+    for router in (knowledge_router, intent_router, rewrite_router, trace_router, dashboard_router):
         for route in router.routes:
             assert isinstance(route, APIRoute)
             calls = {dependency.call for dependency in route.dependant.dependencies}

@@ -12,6 +12,110 @@ test("renders the blue login foundation", async ({ page }) => {
   await expect(page.getByText("知识库与文档管理", { exact: true })).toBeVisible();
 });
 
+test("shows real dashboard metrics and switches the trend scope", async ({ page }, testInfo) => {
+  const start = Date.parse("2026-09-04T08:00:00.000Z");
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/admin/dashboard/**", (route) => {
+    const url = new URL(route.request().url());
+    const window = url.searchParams.get("window") || "24h";
+    if (url.pathname.endsWith("/overview")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({
+            window,
+            compareWindow: `prev_${window}`,
+            updatedAt: start,
+            kpis: {
+              totalUsers: { value: 128, delta: 4, deltaPct: null },
+              activeUsers: { value: 42, delta: 6, deltaPct: 16.7 },
+              totalSessions: { value: 936, delta: 51, deltaPct: null },
+              sessions24h: { value: 51, delta: 8, deltaPct: 18.6 },
+              totalMessages: { value: 2840, delta: 173, deltaPct: null },
+              messages24h: { value: 173, delta: 21, deltaPct: 13.8 },
+            },
+          }),
+        ),
+      });
+    }
+    if (url.pathname.endsWith("/performance")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({
+            window,
+            avgLatencyMs: 2420,
+            p95LatencyMs: 6830,
+            successRate: 98.4,
+            errorRate: 1.6,
+            noDocRate: 4.2,
+            slowRate: 0.8,
+          }),
+        ),
+      });
+    }
+    const quality = url.searchParams.get("metric") === "quality";
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(
+        result({
+          metric: url.searchParams.get("metric"),
+          window,
+          granularity: window === "24h" ? "hour" : "day",
+          series: quality
+            ? [
+                {
+                  name: "错误率",
+                  points: [1.2, 2.5, 1.6].map((value, index) => ({
+                    ts: start + index * 3_600_000,
+                    value,
+                  })),
+                },
+                {
+                  name: "无知识率",
+                  points: [3.4, 5.1, 4.2].map((value, index) => ({
+                    ts: start + index * 3_600_000,
+                    value,
+                  })),
+                },
+              ]
+            : [
+                {
+                  name: "会话数",
+                  points: [32, 44, 51].map((value, index) => ({
+                    ts: start + index * 3_600_000,
+                    value,
+                  })),
+                },
+              ],
+        }),
+      ),
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/admin");
+  await expect(page).toHaveURL(/\/admin\/dashboard$/);
+  await expect(page.getByRole("heading", { name: "系统概览" })).toBeVisible();
+  await expect(page.getByText("98.4%")).toBeVisible();
+  await expect(page.getByText("2.42 s")).toBeVisible();
+  await page.getByRole("button", { name: "质量", exact: true }).click();
+  const legend = page.locator(".dashboard-chart__legend");
+  await expect(legend.getByText("错误率", { exact: true })).toBeVisible();
+  await expect(legend.getByText("无知识率", { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("dashboard-desktop.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "系统概览" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("dashboard-mobile.png"), fullPage: true });
+});
+
 test("streams an answer and opens its source context", async ({ page }) => {
   const feedbackRequests: Array<{ method: string; vote?: number }> = [];
   await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
@@ -107,8 +211,7 @@ test("selects a structured ambiguity scope and continues the conversation", asyn
   await page.route("**/api/ragent/rag/v3/chat?*", (route) => {
     chatRequests += 1;
     selectedQuestion = new URL(route.request().url()).searchParams.get("question") || "";
-    selectedIntentCodes =
-      new URL(route.request().url()).searchParams.get("intentCodes") || "";
+    selectedIntentCodes = new URL(route.request().url()).searchParams.get("intentCodes") || "";
     const body =
       chatRequests === 1
         ? [

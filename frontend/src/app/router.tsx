@@ -3,6 +3,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import { ChatRoute } from "@/app/ChatRoute";
 import {
   ChunkRoute,
+  DashboardRoute,
   DocumentRoute,
   IntentTreeRoute,
   KnowledgeBaseRoute,
@@ -64,7 +65,8 @@ export const router = createBrowserRouter([
       </SessionBootstrap>
     ),
     children: [
-      { index: true, element: <Navigate to="knowledge-bases" replace /> },
+      { index: true, element: <Navigate to="dashboard" replace /> },
+      { path: "dashboard", element: <DashboardRoute /> },
       { path: "knowledge-bases", element: <KnowledgeBaseRoute /> },
       { path: "knowledge-bases/:kbId/documents", element: <DocumentRoute /> },
       { path: "documents/:docId/chunks", element: <ChunkRoute /> },

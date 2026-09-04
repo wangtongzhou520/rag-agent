@@ -18,6 +18,8 @@ import app.rag.intent.orm
 import app.rag.models
 import app.rag.rewrite.orm
 import app.system.user.models
+from app.admin.dashboard import DashboardService
+from app.admin.dashboard import router as dashboard_router
 from app.core.parser.detector import MimeTypeDetector
 from app.core.parser.registry import build_default_registry
 from app.framework.config import Settings, get_settings
@@ -212,6 +214,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.query_term_mapping_service = query_mapping_service
     app.state.rag_trace_query_service = RagTraceQueryService(engine)
     app.state.intent_tree_service = IntentTreeService(engine, intent_cache)
+    app.state.dashboard_service = DashboardService(engine)
     logger.info("app started", root_path=settings.server.root_path)
 
     try:
@@ -268,6 +271,7 @@ def create_app() -> FastAPI:
     app.include_router(rewrite_router)
     app.include_router(intent_router)
     app.include_router(trace_router)
+    app.include_router(dashboard_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 

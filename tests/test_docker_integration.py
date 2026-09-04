@@ -2,6 +2,7 @@
 
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
+from app.admin.dashboard import NO_DOCUMENT_ANSWER, DashboardService
 from app.core.chunk.service import ChunkingService
 from app.core.ingest.kernel import ChunkEmbeddingService, DefaultIngestionKernel
 from app.core.ingest.writer import PgChunkIndexWriter
@@ -41,7 +43,13 @@ from app.knowledge.tasks import KnowledgeTaskHandler
 from app.rag.conversation import ConversationService
 from app.rag.feedback import MessageFeedbackService, MessageFeedbackTaskHandler
 from app.rag.memory.store import ConversationMemoryStore
-from app.rag.models import Conversation, ConversationSummary, Message, MessageFeedback
+from app.rag.models import (
+    Conversation,
+    ConversationSummary,
+    Message,
+    MessageFeedback,
+    RagTraceRun,
+)
 from app.rag.recommend import RecommendedQuestionService
 from app.rag.retrieval.metadata import ChunkMetadataResolver
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
@@ -168,6 +176,91 @@ def _pdf_bytes() -> bytes:
 
 async def test_redis_container_is_reachable(redis_client: Redis) -> None:
     assert await redis_client.ping() is True
+
+
+async def test_dashboard_aggregates_real_postgres_data(
+    integration_engine: AsyncEngine,
+) -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    conversation_id = uuid.uuid4()
+    sessions = async_sessionmaker(integration_engine, expire_on_commit=False)
+    async with sessions.begin() as session:
+        session.add(
+            User(
+                username=f"dashboard-{uuid.uuid4().hex}",
+                password_hash="not-used",
+                role="USER",
+                create_time=now - timedelta(hours=1),
+            )
+        )
+        session.add(
+            Conversation(
+                conversation_id=conversation_id,
+                user_id=71,
+                create_time=now - timedelta(hours=1),
+            )
+        )
+        session.add_all(
+            [
+                Message(
+                    conversation_id=conversation_id,
+                    user_id=71,
+                    role="user",
+                    content="测试 Dashboard",
+                    create_time=now - timedelta(minutes=50),
+                ),
+                Message(
+                    conversation_id=conversation_id,
+                    user_id=71,
+                    role="assistant",
+                    content=NO_DOCUMENT_ANSWER,
+                    create_time=now - timedelta(minutes=49),
+                ),
+            ]
+        )
+        for status, duration, offset in (
+            ("SUCCESS", 1_000, 40),
+            ("SUCCESS", 3_000, 30),
+            ("ERROR", 500, 20),
+            ("RUNNING", None, 10),
+        ):
+            session.add(
+                RagTraceRun(
+                    trace_id=uuid.uuid4(),
+                    trace_name="dashboard-integration",
+                    entry_point="integration",
+                    conversation_id=conversation_id,
+                    task_id=uuid.uuid4(),
+                    user_id=71,
+                    status=status,
+                    start_time=now - timedelta(minutes=offset),
+                    duration_ms=duration,
+                )
+            )
+
+    dashboard = DashboardService(integration_engine)
+    overview = await dashboard.overview("24h")
+    performance = await dashboard.performance("24h")
+    trends = await dashboard.trends("quality", "24h", "hour")
+
+    assert overview["window"] == "24h"
+    assert overview["kpis"]["totalUsers"]["value"] == 1
+    assert overview["kpis"]["activeUsers"]["value"] == 1
+    assert overview["kpis"]["sessions24h"]["value"] == 1
+    assert overview["kpis"]["messages24h"]["value"] == 2
+    assert performance == {
+        "window": "24h",
+        "avgLatencyMs": 2_000,
+        "p95LatencyMs": 3_000,
+        "successRate": 66.7,
+        "errorRate": 33.3,
+        "noDocRate": 100.0,
+        "slowRate": 0.0,
+    }
+    assert trends["metric"] == "quality"
+    assert [series["name"] for series in trends["series"]] == ["错误率", "无知识率"]
+    assert max(point["value"] for point in trends["series"][0]["points"]) == 33.3
+    assert max(point["value"] for point in trends["series"][1]["points"]) == 100.0
 
 
 async def test_conversation_crud_isolated_by_user_and_soft_deletes_children(

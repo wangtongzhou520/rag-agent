@@ -5,6 +5,11 @@ const KnowledgeBasePage = lazy(() =>
     default: module.KnowledgeBasePage,
   })),
 );
+const DashboardPage = lazy(() =>
+  import("@/features/dashboard/DashboardPage").then((module) => ({
+    default: module.DashboardPage,
+  })),
+);
 const DocumentPage = lazy(() =>
   import("@/features/knowledge/DocumentPage").then((module) => ({
     default: module.DocumentPage,
@@ -51,6 +56,10 @@ function KnowledgeRoute({ Page, label }: { Page: ComponentType; label: string })
 
 export function KnowledgeBaseRoute() {
   return <KnowledgeRoute Page={KnowledgeBasePage} label="知识库" />;
+}
+
+export function DashboardRoute() {
+  return <KnowledgeRoute Page={DashboardPage} label="系统概览" />;
 }
 
 export function DocumentRoute() {
