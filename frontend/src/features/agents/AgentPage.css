@@ -1,0 +1,499 @@
+/* 智能体与 Prompt：配置版本 + 槽位登记册 */
+.agent-header-actions,
+.agent-prompt-header > div:last-child,
+.prompt-editor-tools,
+.prompt-placeholder-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.agent-mode-strip {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 28px;
+  padding: 12px 17px;
+  border: 1px solid var(--blue-200);
+  border-left: 4px solid var(--blue-600);
+  border-radius: 8px;
+  background: white;
+}
+.agent-mode-strip > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  white-space: nowrap;
+}
+.agent-mode-strip span,
+.agent-profile-panel > header small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.agent-mode-strip strong {
+  color: var(--blue-700);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px;
+}
+.agent-mode-strip p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.agent-mode-strip b {
+  color: var(--blue-700);
+}
+
+.agent-workbench {
+  display: grid;
+  min-height: 620px;
+  grid-template-columns: 300px minmax(0, 1fr);
+  overflow: hidden;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: white;
+  box-shadow: 0 1px 2px rgb(16 42 86 / 3%);
+}
+.agent-profile-panel {
+  border-right: 1px solid var(--border);
+  background: #f9fbfe;
+}
+.agent-profile-panel > header {
+  display: flex;
+  height: 66px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 17px;
+  border-bottom: 1px solid var(--border);
+}
+.agent-profile-panel > header div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.agent-profile-panel > header span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+.agent-profile-panel > header strong {
+  color: var(--blue-700);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+}
+.agent-profile-list {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+}
+.agent-profile-card {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 30px minmax(0, 1fr) 16px;
+  align-items: start;
+  gap: 10px;
+  padding: 13px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-profile-card:hover {
+  border-color: var(--blue-100);
+  background: white;
+}
+.agent-profile-card.active {
+  border-color: var(--blue-200);
+  background: white;
+  box-shadow: inset 3px 0 var(--blue-600);
+}
+.agent-profile-card > svg {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+.agent-profile-index {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--blue-200);
+  border-radius: 6px;
+  color: var(--blue-700);
+  background: var(--blue-50);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+.agent-profile-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.agent-profile-copy > strong {
+  font-size: 13px;
+}
+.agent-profile-copy > small {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-profile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.agent-profile-tags i,
+.agent-slot-actions i {
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: #eef2f7;
+  font-size: 9px;
+  font-style: normal;
+}
+.agent-profile-tags i.is-active {
+  color: #08784b;
+  background: #e7f7f0;
+}
+
+.agent-prompt-panel {
+  min-width: 0;
+}
+.agent-prompt-header {
+  display: flex;
+  min-height: 112px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.agent-prompt-header > div:first-child > span {
+  color: var(--blue-600);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+.agent-prompt-header h2 {
+  margin: 5px 0 3px;
+  font-size: 21px;
+  letter-spacing: -0.02em;
+}
+.agent-prompt-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.agent-prompt-header button svg {
+  width: 15px;
+  height: 15px;
+}
+.agent-slot-groups {
+  display: grid;
+  gap: 22px;
+  padding: 22px 24px 28px;
+}
+.agent-slot-group > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.agent-slot-group h3 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.agent-slot-group > header span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.agent-slot-group > div {
+  border-top: 1px solid var(--border);
+}
+.agent-slot-card {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 82px;
+  padding: 12px 3px;
+  border-bottom: 1px solid var(--border);
+}
+.agent-slot-card.inactive {
+  background: #fbfcfe;
+}
+.agent-slot-state {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  color: #08784b;
+  background: #e7f7f0;
+}
+.agent-slot-card.inactive .agent-slot-state {
+  color: var(--text-muted);
+  background: #edf1f6;
+}
+.agent-slot-state svg {
+  width: 14px;
+  height: 14px;
+}
+.agent-slot-copy {
+  min-width: 0;
+}
+.agent-slot-copy > div {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+.agent-slot-copy strong {
+  font-size: 13px;
+}
+.agent-slot-copy code,
+.prompt-editor-kicker code,
+.prompt-placeholder-note code {
+  color: var(--blue-700);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+.agent-slot-copy p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.agent-slot-copy > span {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+.agent-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.agent-slot-actions i.configured {
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.agent-slot-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--blue-700);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.agent-slot-actions button:hover {
+  background: var(--blue-50);
+}
+.agent-slot-actions button svg {
+  width: 13px;
+  height: 13px;
+}
+.agent-page-state {
+  display: grid;
+  min-height: 170px;
+  place-items: center;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.agent-page-state.error {
+  color: var(--danger);
+}
+
+.agent-profile-dialog {
+  width: min(540px, calc(100vw - 32px));
+}
+.agent-profile-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+}
+.agent-profile-form label,
+.agent-profile-form fieldset {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+.agent-profile-form textarea {
+  min-height: 90px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: none;
+  color: var(--text-primary);
+  background: white;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.agent-profile-form textarea:focus {
+  border-color: var(--blue-400);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 10%);
+}
+.agent-avatar-options {
+  display: flex;
+  gap: 7px;
+}
+.agent-avatar-options button {
+  display: grid;
+  width: 38px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: white;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  cursor: pointer;
+}
+.agent-avatar-options button.active {
+  border-color: var(--blue-500);
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.agent-form-error {
+  margin: 12px 0 0;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.prompt-editor-dialog {
+  width: min(820px, calc(100vw - 32px));
+}
+.prompt-editor-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.prompt-editor-kicker span {
+  color: var(--blue-700);
+  font-size: 10px;
+  font-weight: 700;
+}
+.prompt-editor-kicker code {
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+.prompt-editor-tools {
+  margin: 20px 0 10px;
+}
+.prompt-editor-tools svg {
+  width: 14px;
+  height: 14px;
+}
+.prompt-placeholder-note {
+  flex-wrap: wrap;
+  margin-bottom: 9px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.prompt-placeholder-note code {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--blue-50);
+}
+.prompt-editor-textarea {
+  width: 100%;
+  min-height: 330px;
+  resize: vertical;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  outline: none;
+  color: #17233b;
+  background: #fbfdff;
+  font-family: "IBM Plex Mono", "Noto Sans SC", monospace;
+  font-size: 12px;
+  line-height: 1.75;
+}
+.prompt-editor-textarea:focus {
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 10%);
+}
+.prompt-editor-count {
+  margin: 6px 2px 0;
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  text-align: right;
+}
+
+@media (max-width: 1060px) {
+  .agent-workbench {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+  .agent-prompt-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .agent-slot-card {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+  .agent-slot-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .agent-page-header,
+  .agent-mode-strip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .agent-workbench {
+    display: block;
+    overflow: visible;
+  }
+  .agent-profile-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .agent-profile-list {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .agent-prompt-header,
+  .agent-slot-groups {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .agent-prompt-header > div:last-child {
+    flex-wrap: wrap;
+  }
+  .agent-slot-copy > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .agent-header-actions {
+    width: 100%;
+  }
+}

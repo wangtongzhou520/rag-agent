@@ -8,6 +8,7 @@ import {
   LogOut,
   Replace,
   ScrollText,
+  UserRoundCog,
   UsersRound,
 } from "lucide-react";
 import { Link, NavLink, Outlet } from "react-router-dom";
@@ -21,6 +22,7 @@ const modules = [
   [LayoutDashboard, "系统概览", "/admin/dashboard"],
   [Database, "知识库管理", "/admin/knowledge-bases"],
   [GitCommitHorizontal, "Pipeline 与任务", "/admin/ingestion"],
+  [UserRoundCog, "智能体与 Prompt", "/admin/agents"],
   [GitBranch, "意图树", "/admin/intent-tree"],
   [Replace, "查询词映射", "/admin/mappings"],
   [Activity, "RAG Trace", "/admin/traces"],

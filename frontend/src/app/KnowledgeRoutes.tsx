@@ -21,6 +21,9 @@ const IngestionPage = lazy(() =>
     default: module.IngestionPage,
   })),
 );
+const AgentPage = lazy(() =>
+  import("@/features/agents/AgentPage").then((module) => ({ default: module.AgentPage })),
+);
 const DocumentPage = lazy(() =>
   import("@/features/knowledge/DocumentPage").then((module) => ({
     default: module.DocumentPage,
@@ -83,6 +86,10 @@ export function AuditRoute() {
 
 export function IngestionRoute() {
   return <KnowledgeRoute Page={IngestionPage} label="Pipeline 与任务" />;
+}
+
+export function AgentRoute() {
+  return <KnowledgeRoute Page={AgentPage} label="智能体与 Prompt" />;
 }
 
 export function DocumentRoute() {

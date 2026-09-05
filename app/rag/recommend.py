@@ -16,6 +16,8 @@ from app.framework.sse import RecommendedQuestionsPayload, RecommendedQuestionSt
 from app.model_runtime.chat.service import LLMService
 from app.model_runtime.routing import Tier
 from app.rag.models import Message
+from app.rag.prompt.resolver import AgentPromptResolver
+from app.rag.prompt.slots import AgentPromptSlot
 from app.rag.source.citation import strip_citations
 from app.rag.trace.record import RagTraceRecordService
 
@@ -24,9 +26,15 @@ _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 
 
 class RecommendedQuestionGenerator:
-    def __init__(self, llm: LLMService, count: int = 3) -> None:
+    def __init__(
+        self,
+        llm: LLMService,
+        count: int = 3,
+        prompt_resolver: AgentPromptResolver | None = None,
+    ) -> None:
         self._llm = llm
         self._count = max(1, count)
+        self._prompt_resolver = prompt_resolver
 
     async def generate(
         self,
@@ -35,6 +43,23 @@ class RecommendedQuestionGenerator:
         grounding_chunks: list[dict] | None,
     ) -> RecommendedQuestionsPayload:
         context = self._grounding_text(grounding_chunks)
+        user_prompt = (
+            f"原问题：\n{question[:1000]}\n\n"
+            f"回答：\n{strip_citations(answer)[:6000]}\n\n"
+            f"依据：\n{context}"
+        )
+        if self._prompt_resolver is not None:
+            configured = await self._prompt_resolver.render(
+                AgentPromptSlot.RECOMMENDED_QUESTIONS,
+                {
+                    "question": question[:1000],
+                    "answer": strip_citations(answer)[:6000],
+                    "chunks": context,
+                    "count": self._count,
+                },
+            )
+            if configured:
+                user_prompt = configured
         request = ChatRequest(
             messages=[
                 ChatMessage(
@@ -46,11 +71,7 @@ class RecommendedQuestionGenerator:
                 ),
                 ChatMessage(
                     role=ChatRole.USER,
-                    content=(
-                        f"原问题：\n{question[:1000]}\n\n"
-                        f"回答：\n{strip_citations(answer)[:6000]}\n\n"
-                        f"依据：\n{context}"
-                    ),
+                    content=user_prompt,
                 ),
             ],
             thinking=False,

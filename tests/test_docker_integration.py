@@ -18,6 +18,8 @@ from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
+from app.admin.agents.schemas import AgentProfileWrite
+from app.admin.agents.service import AgentAdminService
 from app.admin.dashboard import NO_DOCUMENT_ANSWER, DashboardService
 from app.core.chunk.service import ChunkingService
 from app.core.ingest.kernel import ChunkEmbeddingService, DefaultIngestionKernel
@@ -54,6 +56,9 @@ from app.rag.models import (
     MessageFeedback,
     RagTraceRun,
 )
+from app.rag.prompt.cache import AgentPromptCache
+from app.rag.prompt.resolver import AgentPromptResolver
+from app.rag.prompt.slots import AgentPromptSlot
 from app.rag.recommend import RecommendedQuestionService
 from app.rag.retrieval.metadata import ChunkMetadataResolver
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
@@ -252,6 +257,64 @@ async def test_pipeline_crud_and_synchronous_file_run(
         await http.aclose()
 
 
+async def test_agent_profiles_prompt_fallback_and_cache_invalidation(
+    integration_engine: AsyncEngine, redis_client: Redis
+) -> None:
+    prefix = f"ragent:integration:agents:{uuid.uuid4().hex}:"
+    cache = AgentPromptCache(redis_client, prefix)
+    service = AgentAdminService(integration_engine, cache, "workflow")
+    resolver = AgentPromptResolver(integration_engine, cache)
+    try:
+        await service.ensure_builtin()
+        listing = await service.list_profiles()
+        builtin = listing["agents"][0]
+        assert builtin["builtin"] is True
+        assert builtin["active"] is True
+        assert listing["effectiveSlotTotal"] == 6
+
+        agent_id = int(
+            await service.create(
+                AgentProfileWrite(
+                    name="集成测试支持",
+                    description="验证槽位覆盖和回落",
+                    avatar="briefcase",
+                ),
+                user_id=1,
+            )
+        )
+        custom_prompt = "仅回答集成测试范围内的问题。"
+        await service.save_prompt(
+            agent_id,
+            AgentPromptSlot.SYSTEM_CHAT,
+            custom_prompt,
+            user_id=1,
+        )
+        await service.activate(agent_id, user_id=1)
+        assert await resolver.resolve(AgentPromptSlot.SYSTEM_CHAT) == custom_prompt
+        assert await redis_client.exists(f"{prefix}agent:resolved-prompts") == 1
+
+        await service.save_prompt(
+            agent_id, AgentPromptSlot.SYSTEM_CHAT, "  ", user_id=1
+        )
+        assert await redis_client.exists(f"{prefix}agent:resolved-prompts") == 0
+        assert "友好、简洁" in await resolver.resolve(AgentPromptSlot.SYSTEM_CHAT)
+
+        config = await service.prompts(agent_id)
+        system_slot = next(
+            item for item in config["slots"] if item["slotKey"] == "SYSTEM_CHAT"
+        )
+        assert system_slot["content"] == ""
+        assert system_slot["effective"] is True
+
+        await service.activate(int(builtin["id"]), user_id=1)
+        await service.delete(agent_id)
+        assert len((await service.list_profiles())["agents"]) == 1
+    finally:
+        keys = [key async for key in redis_client.scan_iter(f"{prefix}*")]
+        if keys:
+            await redis_client.delete(*keys)
+
+
 async def test_redis_container_is_reachable(redis_client: Redis) -> None:
     assert await redis_client.ping() is True
 
@@ -260,6 +323,9 @@ async def test_dashboard_aggregates_real_postgres_data(
     integration_engine: AsyncEngine,
 ) -> None:
     now = datetime.now(UTC).replace(tzinfo=None)
+    trace_bucket = (now - timedelta(hours=2)).replace(
+        minute=30, second=0, microsecond=0
+    )
     conversation_id = uuid.uuid4()
     sessions = async_sessionmaker(integration_engine, expire_on_commit=False)
     async with sessions.begin() as session:
@@ -311,7 +377,7 @@ async def test_dashboard_aggregates_real_postgres_data(
                     task_id=uuid.uuid4(),
                     user_id=71,
                     status=status,
-                    start_time=now - timedelta(minutes=offset),
+                    start_time=trace_bucket + timedelta(seconds=offset),
                     duration_ms=duration,
                 )
             )

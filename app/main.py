@@ -17,9 +17,12 @@ import app.ingestion.models
 import app.knowledge.models
 import app.rag.intent.orm
 import app.rag.models
+import app.rag.prompt.models
 import app.rag.rewrite.orm
 import app.system.audit.models
 import app.system.user.models
+from app.admin.agents.router import router as agent_router
+from app.admin.agents.service import AgentAdminService
 from app.admin.dashboard import DashboardService
 from app.admin.dashboard import router as dashboard_router
 from app.core.chunk.service import ChunkingService
@@ -51,6 +54,8 @@ from app.rag.intent.service import IntentTreeService
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.memory.store import ConversationMemoryStore
 from app.rag.pipeline.stream_chat import StreamChatPipeline
+from app.rag.prompt.cache import AgentPromptCache
+from app.rag.prompt.resolver import AgentPromptResolver
 from app.rag.recommend import RecommendedQuestionGenerator, RecommendedQuestionService
 from app.rag.retrieval.channels import VectorSearchChannel
 from app.rag.retrieval.engine import MultiChannelRetrievalEngine
@@ -105,6 +110,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         decode_responses=True,
     )
     http_client = httpx.AsyncClient()
+
+    prompt_cache = AgentPromptCache(redis_client, settings.redis.key_prefix)
+    prompt_resolver = AgentPromptResolver(engine, prompt_cache)
+    agent_admin_service = AgentAdminService(
+        engine, prompt_cache, settings.rag.engine.type
+    )
+    if settings.datasource.auto_ddl:
+        await agent_admin_service.ensure_builtin()
 
     # 模型运行时与问答链路装配（docs/04 §2 三层结构、docs/01 §11 模块落点）
     model_runtime = build_model_runtime(settings)
@@ -190,12 +203,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             confidence_threshold=intent_settings.confidence_threshold
         ),
         task_manager=stream_task_manager,
+        prompt_resolver=prompt_resolver,
     )
 
     app.state.engine = engine
     app.state.redis = redis_client
     app.state.http = http_client
     app.state.model_runtime = model_runtime
+    app.state.agent_admin_service = agent_admin_service
     auth_service = AuthService(
         engine, redis_client, settings.auth, settings.redis
     )
@@ -213,7 +228,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.message_feedback_service = MessageFeedbackService(engine)
     app.state.recommended_question_service = RecommendedQuestionService(
-        engine, RecommendedQuestionGenerator(model_runtime.llm), trace_service
+        engine,
+        RecommendedQuestionGenerator(
+            model_runtime.llm, prompt_resolver=prompt_resolver
+        ),
+        trace_service,
     )
     app.state.knowledge_service = KnowledgeService(
         engine,
@@ -305,6 +324,7 @@ def create_app() -> FastAPI:
     app.include_router(user_router)
     app.include_router(audit_router)
     app.include_router(ingestion_router)
+    app.include_router(agent_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 

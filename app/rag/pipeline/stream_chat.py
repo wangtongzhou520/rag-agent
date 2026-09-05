@@ -20,6 +20,8 @@ from app.rag.intent.resolver import IntentResolver
 from app.rag.mcp.service import McpEvidence, McpIntentDispatcher
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.pipeline.event_handler import StreamEventCallback
+from app.rag.prompt.resolver import AgentPromptResolver
+from app.rag.prompt.slots import AgentPromptSlot
 from app.rag.retrieval.models import RetrievalScope, RetrievedChunk
 from app.rag.retrieval.scope import RetrievalScopeResolver
 from app.rag.rewrite.models import RewriteResult
@@ -91,6 +93,7 @@ class StreamChatPipeline:
         rewriter: QueryRewriter | None = None,
         scope_resolver: RetrievalScopeResolver | None = None,
         task_manager: StreamTaskManager | None = None,
+        prompt_resolver: AgentPromptResolver | None = None,
     ) -> None:
         self._memory = memory
         self._llm = llm
@@ -101,6 +104,7 @@ class StreamChatPipeline:
         self._rewriter = rewriter
         self._scope_resolver = scope_resolver or RetrievalScopeResolver()
         self._task_manager = task_manager
+        self._prompt_resolver = prompt_resolver
 
     async def execute(self, ctx: StreamChatContext, callback: StreamEventCallback) -> None:
         try:
@@ -207,11 +211,12 @@ class StreamChatPipeline:
             for chunk in typed_chunks
         )
         context = CitationContextEnricher().enrich(raw_context, assembled.indexes)
-        system = (
+        prompt = await self._resolve_prompt(
+            AgentPromptSlot.KB_ANSWER,
             "你是严谨的知识库问答助手。仅依据 <knowledge-context> 中的资料回答；"
             "资料不足时明确说明。引用事实时在句末使用 [N](#cite-N)，N 必须来自 ref。"
-            f"\n<knowledge-context>\n{context}\n</knowledge-context>"
         )
+        system = f"{prompt}\n<knowledge-context>\n{context}\n</knowledge-context>"
         messages = [
             ChatMessage(role=ChatRole.SYSTEM, content=system),
             *ctx.history,
@@ -223,11 +228,12 @@ class StreamChatPipeline:
     async def _stream_system_response(
         self, ctx: StreamChatContext, callback: StreamEventCallback
     ) -> None:
+        system = await self._resolve_prompt(
+            AgentPromptSlot.SYSTEM_CHAT,
+            "你是友好、简洁的智能助手。直接回答用户，不要编造知识库来源或引用。",
+        )
         messages = [
-            ChatMessage(
-                role=ChatRole.SYSTEM,
-                content="你是友好、简洁的智能助手。直接回答用户，不要编造知识库来源或引用。",
-            ),
+            ChatMessage(role=ChatRole.SYSTEM, content=system),
             *ctx.history,
             ChatMessage(role=ChatRole.USER, content=ctx.question),
         ]
@@ -247,14 +253,15 @@ class StreamChatPipeline:
             f'<tool-result tool="{item.tool_id}">\n{item.content}\n</tool-result>'
             for item in evidence
         )
+        prompt = await self._resolve_prompt(
+            AgentPromptSlot.MCP_ANSWER,
+            "依据 <tool-context> 中的实时工具结果回答用户。"
+            "不得把工具结果标成知识库引用。",
+        )
         messages = [
             ChatMessage(
                 role=ChatRole.SYSTEM,
-                content=(
-                    "依据 <tool-context> 中的实时工具结果回答用户。"
-                    "不得把工具结果标成知识库引用。"
-                    f"\n<tool-context>\n{context}\n</tool-context>"
-                ),
+                content=f"{prompt}\n<tool-context>\n{context}\n</tool-context>",
             ),
             *ctx.history,
             ChatMessage(role=ChatRole.USER, content=ctx.question),
@@ -264,6 +271,12 @@ class StreamChatPipeline:
             ChatRequest(messages=messages, thinking=ctx.deep_thinking),
             callback,
         )
+
+    async def _resolve_prompt(self, slot: AgentPromptSlot, fallback: str) -> str:
+        if self._prompt_resolver is None:
+            return fallback
+        resolved = await self._prompt_resolver.resolve(slot)
+        return resolved or fallback
 
     async def _run_model_stream(
         self,

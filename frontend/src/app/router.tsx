@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { ChatRoute } from "@/app/ChatRoute";
 import {
+  AgentRoute,
   AuditRoute,
   ChunkRoute,
   DashboardRoute,
@@ -73,6 +74,7 @@ export const router = createBrowserRouter([
       { path: "users", element: <UserRoute /> },
       { path: "audit-logs", element: <AuditRoute /> },
       { path: "ingestion", element: <IngestionRoute /> },
+      { path: "agents", element: <AgentRoute /> },
       { path: "knowledge-bases", element: <KnowledgeBaseRoute /> },
       { path: "knowledge-bases/:kbId/documents", element: <DocumentRoute /> },
       { path: "documents/:docId/chunks", element: <ChunkRoute /> },

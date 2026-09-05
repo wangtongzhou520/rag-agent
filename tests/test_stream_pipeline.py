@@ -148,6 +148,32 @@ async def test_system_intent_streams_without_retrieval() -> None:
     assert "不要编造知识库来源" in llm.requests[0].messages[0].content
 
 
+async def test_system_intent_uses_managed_prompt() -> None:
+    class SystemResolver:
+        async def resolve(self, rewrite_result):
+            node = IntentNode(1, "system.chat", "闲聊", 2, kind=IntentKind.SYSTEM)
+            return [SubQuestionIntent(rewrite_result.rewritten_question, (NodeScore(node, 0.99),))]
+
+    class PromptResolver:
+        async def resolve(self, slot):
+            assert str(slot) == "SYSTEM_CHAT"
+            return "这是当前激活智能体的系统提示。"
+
+    memory = FakeMemory()
+    llm = FakeLLM(chunks=["定制回答"])
+    pipeline = StreamChatPipeline(
+        memory,
+        llm,
+        EmptyRetrievalEngine(),
+        SystemResolver(),
+        prompt_resolver=PromptResolver(),
+    )
+
+    await pipeline.execute(make_ctx(question="你好"), make_handler(SseSender(), memory))
+
+    assert llm.requests[0].messages[0].content == "这是当前激活智能体的系统提示。"
+
+
 async def test_ambiguous_intent_emits_structured_guidance_and_finishes() -> None:
     class AmbiguousResolver:
         async def resolve(self, rewrite_result):

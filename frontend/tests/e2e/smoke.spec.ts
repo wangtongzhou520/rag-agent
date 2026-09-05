@@ -1299,3 +1299,142 @@ test("configures pipelines and inspects real task stages", async ({ page }, test
   await expect(page.getByRole("heading", { name: "Pipeline 与任务" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("pipeline-tasks-mobile.png"), fullPage: true });
 });
+
+test("switches agent profiles and edits an effective prompt slot", async ({ page }, testInfo) => {
+  const now = Date.parse("2026-09-05T08:00:00.000Z");
+  let promptContent = "";
+  let activeId = 1;
+  const profiles = () => [
+    {
+      id: 1,
+      name: "默认助手",
+      description: "系统内置回落配置",
+      avatar: "compass",
+      builtin: true,
+      active: activeId === 1,
+      effectiveSlots: 6,
+      inactiveSlots: 1,
+      createTime: now,
+      updateTime: now,
+    },
+    {
+      id: 2,
+      name: "产品支持",
+      description: "面向产品手册与交付问题",
+      avatar: "briefcase",
+      builtin: false,
+      active: activeId === 2,
+      effectiveSlots: promptContent ? 1 : 0,
+      inactiveSlots: 0,
+      createTime: now,
+      updateTime: now,
+    },
+  ];
+  const slots = (agentId: number) => [
+    {
+      slotKey: "SYSTEM_CHAT",
+      displayName: "闲聊 / 关于助手",
+      group: "WORKFLOW",
+      groupName: "WorkFlow 专属",
+      effective: true,
+      inactiveReason: null,
+      requiredPlaceholders: [],
+      content: agentId === 1 ? "默认闲聊 Prompt" : "",
+    },
+    {
+      slotKey: "AGENT_MAIN",
+      displayName: "Agent 人设",
+      group: "AGENT",
+      groupName: "Agent 专属",
+      effective: false,
+      inactiveReason: "WorkFlow 模式不经过 ReAct 架构",
+      requiredPlaceholders: [],
+      content: "",
+    },
+    {
+      slotKey: "KB_ANSWER",
+      displayName: "知识库问答",
+      group: "COMMON",
+      groupName: "通用",
+      effective: true,
+      inactiveReason: null,
+      requiredPlaceholders: [],
+      content: agentId === 1 ? "默认知识库 Prompt" : promptContent,
+    },
+  ];
+
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/agents**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.includes("/prompt-slots/KB_ANSWER/default")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result("默认知识库 Prompt")),
+      });
+    }
+    const promptMatch = url.pathname.match(/\/agents\/(\d+)\/prompts$/);
+    if (promptMatch && request.method() === "GET") {
+      const agentId = Number(promptMatch[1]);
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({
+            agentId,
+            agentName: profiles().find((item) => item.id === agentId)?.name,
+            builtin: agentId === 1,
+            defaultAgentName: "默认助手",
+            mode: "WORKFLOW",
+            slots: slots(agentId),
+          }),
+        ),
+      });
+    }
+    if (url.pathname.endsWith("/agents/2/activate")) {
+      activeId = 2;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    if (url.pathname.endsWith("/agents/2/prompts/KB_ANSWER") && request.method() === "PUT") {
+      promptContent = request.postDataJSON().content;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+    }
+    if (url.pathname.endsWith("/agents") && request.method() === "GET") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({ mode: "WORKFLOW", effectiveSlotTotal: 6, agents: profiles() }),
+        ),
+      });
+    }
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/admin/agents");
+  await expect(page.getByRole("heading", { name: "智能体与 Prompt" })).toBeVisible();
+  await expect(page.getByText("当前执行架构")).toBeVisible();
+  await page.getByRole("button", { name: /产品支持/ }).click();
+  await expect(page.getByRole("heading", { name: "产品支持" })).toBeVisible();
+  await expect(page.getByText("WorkFlow 模式不经过 ReAct 架构")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("agents-desktop.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "设为生效" }).click();
+  await expect(page.getByText("生效中").last()).toBeVisible();
+  const kbSlot = page.locator("article").filter({ hasText: "KB_ANSWER" });
+  await kbSlot.getByRole("button", { name: "编辑" }).click();
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "知识库问答" })).toBeVisible();
+  await page.getByRole("button", { name: "从默认复制" }).click();
+  await expect(page.getByLabel("知识库问答 Prompt 内容")).toHaveValue("默认知识库 Prompt");
+  await page.getByRole("button", { name: "保存 Prompt" }).click();
+  await expect(kbSlot.getByText("已配置", { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "智能体与 Prompt" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("agents-mobile.png"), fullPage: true });
+});

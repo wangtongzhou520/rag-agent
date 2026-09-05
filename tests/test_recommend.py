@@ -37,6 +37,21 @@ async def test_generator_uses_fast_tier_and_bounded_grounding() -> None:
     assert result.questions == ["继续问题一？", "继续问题二？"]
 
 
+async def test_generator_renders_managed_prompt_when_resolver_is_present() -> None:
+    class PromptResolver:
+        async def render(self, slot, values):
+            assert str(slot) == "RECOMMENDED_QUESTIONS"
+            return f"定制：{values['question']}|{values['answer']}|{values['chunks']}|{values['count']}"
+
+    llm = FakeLLM('["下一步？"]')
+    generator = RecommendedQuestionGenerator(llm, prompt_resolver=PromptResolver())
+
+    await generator.generate("原问题", "回答[1](#cite-1)", None)
+
+    prompt = llm.calls[0][0].messages[-1].content
+    assert prompt == "定制：原问题|回答|（无检索片段，仅依据问答生成）|3"
+
+
 def test_parser_deduplicates_truncates_and_negative_caches_empty_array() -> None:
     long_question = "问" * 220
     result = RecommendedQuestionGenerator.parse(
