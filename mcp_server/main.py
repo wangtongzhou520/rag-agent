@@ -8,21 +8,12 @@ import os
 
 from fastmcp import FastMCP
 
+from mcp_server.tools import sales, ticket, weather
+
 mcp = FastMCP("ragent-mcp-server", version="0.0.1")
-
-
-@mcp.tool
-def weather_query(city: str) -> dict:
-    """查询城市天气（占位实现，返回模拟数据）。"""
-    return {
-        "city": city,
-        "weather": "sunny",
-        "temperature": 26,
-        "unit": "celsius",
-    }
-
-
-# TODO(M4): 注册业务工具（sales / ticket / youcom_search），见 06 文档
+weather.register(mcp)
+sales.register(mcp)
+ticket.register(mcp)
 
 
 def main() -> None:

@@ -8,31 +8,33 @@
 
 ### mcp-server（独立进程）
 
-- [ ] FastMCP 3 服务端（`from fastmcp import FastMCP`），Streamable HTTP 传输，端点 `/mcp`，端口 `9099`
-- [ ] `serverInfo = ragent-mcp-server / 0.0.1`
-- [ ] `weather_query` 工具：20 城坐标表、确定性伪随机天气（同日同城结果一致）、current/forecast 两种模式
-- [ ] `sales_query` 工具：period 日期窗 + 按日缓存的确定性模拟数据、summary/ranking/detail/trend 四种查询
-- [ ] `ticket_query` 工具：近 30 天确定性模拟工单、summary/list/stats 三种查询
+- [x] FastMCP 3 服务端（`from fastmcp import FastMCP`），Streamable HTTP 传输，端点 `/mcp`，端口 `9099`
+- [x] `serverInfo = ragent-mcp-server / 0.0.1`
+- [x] `weather_query` 工具：确定性模拟天气，current/forecast 两种模式
+- [x] `sales_query` 工具：period 日期窗 + 确定性模拟数据、summary/ranking/detail/trend 四种查询
+- [x] `ticket_query` 工具：确定性模拟工单、summary/list/stats 三种查询
 - [ ] `youcom_search` 工具：You.com Search API 联网搜索，`YDC_API_KEY` 存在才注册（“工具存在 ⟺ 可用”）
-- [ ] 服务端轻校验（必填缺失/枚举越界/数值钳制）+ `isError` 结果约定；预期业务失败抛 `fastmcp.exceptions.ToolError`，由协议包装为工具错误结果
+- [x] 服务端轻校验（必填缺失/枚举越界/数值钳制）+ `isError` 结果约定；预期业务失败抛 `fastmcp.exceptions.ToolError`，由协议包装为工具错误结果
 
 ### client（rag 侧）
 
-- [ ] 启动时按配置连接每个 server 的 `{url}/mcp`，`fastmcp.Client` 建立会话（进入 async 上下文即 initialize）+ `list_tools()` 完成工具发现
-- [ ] 每个远端工具按 `{serverName}:{toolName}` 注册一个 `McpClientToolExecutor` 进 `McpToolRegistry`；连接失败仅告警跳过，不阻断启动，并由后台重发现恢复
-- [ ] 一期不提供本地 MCP executor，仅保留统一注册表接口
-- [ ] 进程退出时关闭全部 MCP 会话
+- [x] 启动时按配置连接每个 server 的 `{url}/mcp`，`fastmcp.Client` 建立会话（进入 async 上下文即 initialize）+ `list_tools()` 完成工具发现
+- [x] 每个远端工具按 `{serverName}:{toolName}` 注册一个 `McpClientToolExecutor` 进 `McpToolRegistry`；连接失败仅告警跳过，不阻断启动，管理 API 可手动重新发现
+- [x] 一期不提供本地 MCP executor，仅保留统一注册表接口
+- [x] 进程退出时关闭全部 MCP 会话
+- [ ] 后台指数退避自动重发现（当前由管理员显式触发重新发现）
 
 ### 意图驱动调用与提参
 
-- [ ] 意图节点 `kind=MCP` 绑定 `mcpToolId` 与可选 `paramPromptTemplate`
-- [ ] 子问题意图分类命中 MCP 节点 → `RetrievalEngine.executeMcpTools` 并行（每子问题内）执行
-- [ ] LLM 提参：标准档、`temperature=0.1`、`topP=0.3`、`thinking=false`，按 `inputSchema` 从问题提取 JSON 参数
-- [ ] 三态结局：`SUCCESS` 填默认值后真正调用 / `NEED_CLARIFICATION` 不调用、注入澄清提示（`isError=false`）/ `FAILED` 不调用、注入失败提示（`isError=true`）
-- [ ] 保守校验：值类型/枚举非法一律判 `FAILED`，杜绝静默丢弃过滤条件
+- [x] 意图节点 `kind=MCP` 绑定限定格式的 `mcpToolId`
+- [ ] 意图节点自定义 `paramPromptTemplate` / `promptSnippet`
+- [x] 子问题意图分类命中 MCP 节点后并行分发工具调用，并受全局/per-server Semaphore 双层限流
+- [x] LLM 提参：标准档、`temperature=0.1`、`topP=0.3`、`thinking=false`，按 `inputSchema` 从问题提取 JSON 参数
+- [x] 三态行为：成功填默认值后调用、必填缺失时追问、JSON 或值非法时跳过调用
+- [x] 保守校验：值类型/枚举非法一律失败，杜绝静默丢弃过滤条件
 - [ ] MCP 上下文格式化注入 Prompt；`isError=true` 结果进「工具调用失败」段（对应 `DefaultContextFormatter.formatMcpContext`）
-- [ ] 主回答生成参数由 Agent/Profile 统一决定，不因 `mcpContext` 非空自动提高 temperature；澄清、成功、失败三类状态分别传递
-- [ ] 协议结果进入 client adapter 后统一转为领域对象 `ToolOutput(is_error=...)`，全链路异常在 adapter/编排边界收敛，绝不抛断问答主链路
+- [x] 主回答通过 Agent/Profile 的 `MCP_ANSWER` 槽位解析，不因 `mcpContext` 非空自动提高 temperature
+- [x] 协议结果进入 client adapter 后统一转为领域对象 `ToolOutput(is_error=...)`，全链路异常在 adapter/编排边界收敛，绝不抛断问答主链路
 
 ## 2. 总体拓扑与职责边界
 
@@ -554,9 +556,21 @@ Streamable HTTP 单端点 `/mcp`，JSON-RPC 2.0：
 {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"暂不支持查询该城市，当前支持：北京、上海、…"}],"isError":true}}
 ```
 
-### 10.2 管理面接口（API 进程，`/api/ragent` 下，详见 02/07 文档）
+### 10.2 管理面接口（API 进程，`/api/ragent` 下，详见 07 文档）
 
-MCP 无独立管理接口；绑定关系通过意图树管理接口维护：创建/更新意图节点时传 `kind=2`、限定格式的 `mcpToolId`、可选 `paramPromptTemplate` / `promptSnippet`；树查询响应透传这些字段。请求响应使用项目统一的 `Result<T>` 契约，以现有 React 前端可直接使用为验收标准。
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/mcp/servers` | 查询配置的 Server、在线状态、版本与工具数 |
+| POST | `/mcp/servers/{serverName}/refresh` | 关闭旧会话并重新发现该 Server |
+| PUT | `/mcp/servers/{serverName}/enabled` | 持久化启停 Server |
+| GET | `/mcp/tools` | 查询工具定义、Input Schema、有效状态和意图绑定数 |
+| PUT | `/mcp/tools/{serverName}/{toolName}/enabled` | 持久化启停工具 |
+| POST | `/mcp/tools/{serverName}/{toolName}/debug` | 使用显式 JSON 参数调试工具 |
+
+全部接口要求管理员权限，写操作和调试进入业务审计。Server/Tool 启停覆盖分别持久化在
+`t_mcp_server_state`、`t_mcp_tool_state`；重新发现不会覆盖管理员设置。意图绑定继续通过
+意图树的 `kind=2 + mcpToolId` 维护。请求响应统一使用 `Result<T>`，时间字段为 Unix epoch
+milliseconds。
 
 ## 11. 核心流程
 
@@ -618,15 +632,14 @@ sequenceDiagram
 | 销售工具 | `mcp_server/tools/sales.py`：`sales_query` + 进程内日缓存 |
 | 工单工具 | `mcp_server/tools/ticket.py`：`ticket_query` + 进程内日缓存 |
 | 联网搜索工具 | `mcp_server/tools/youcom_search.py`：条件注册，httpx AsyncClient |
-| 客户端生命周期 | `app/rag/mcp/client.py`：`McpClientManager`（`AsyncExitStack`、lifespan discover/close、后台重发现）；配置模型并入 `rag.mcp` |
-| 工具注册表 | `app/rag/mcp/registry.py`：`McpToolRegistry`(Protocol) / `DefaultMcpToolRegistry` |
-| 工具执行 | `app/rag/mcp/executor.py`：`McpToolExecutor`(Protocol) / `McpClientToolExecutor` |
-| 参数提取 | `app/rag/mcp/extractor.py`：`McpParameterExtractor` / `LLMMcpParameterExtractor`，使用 `app/model_runtime/chat` 标准档 |
-| 提取与调用模型 | `app/rag/mcp/models.py`：`McpExtractionResult` dataclass + `Status` 枚举；同模块定义 SDK 无关的 `ToolOutput` |
-| 检索编排 | `app/rag/retrieval/engine.py`：MCP 分支（Semaphore 限流 + asyncio.gather 并发） |
-| 上下文格式化 | `app/rag/prompt/context_formatter.py`：`format_mcp_context` |
-| 三态消费 | `app/rag/pipeline/` 区分成功/澄清/失败，生成参数统一从 Agent/Profile 解析 |
-| 提参模板 | `config/prompts/mcp-parameter-extract.st`、`mcp-parameter-extract-user.st` |
+| 客户端生命周期 | `app/rag/mcp/client.py`：`McpClientManager`（lifespan discover/close、显式 refresh）；配置模型并入 `rag.mcp` |
+| 工具注册表 | `app/rag/mcp/registry.py`：`McpToolRegistry`，按 Server 原子替换工具快照并叠加启停状态 |
+| 工具执行 | `app/rag/mcp/executor.py`：`McpClientToolExecutor`，协议结果转 `ToolOutput` |
+| 参数提取与调用 | `app/rag/mcp/runtime.py`：`McpQuestionExecutor`，标准档 LLM 提参、校验、澄清及双层限流 |
+| 领域模型 | `app/rag/mcp/models.py`：`ToolDefinition`、`ToolOutput`、`McpServerSnapshot` |
+| 意图分发 | `app/rag/mcp/service.py`：`McpIntentDispatcher` 并发执行限定 tool key |
+| 管理面 | `app/admin/mcp/`：状态查询、启停、重新发现、显式参数调试和审计 |
+| 状态持久化 | `app/rag/mcp/orm.py`：`McpServerState`、`McpToolState` |
 
 ## 14. 配置项清单
 

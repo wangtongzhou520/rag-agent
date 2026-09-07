@@ -234,6 +234,19 @@ class RateLimitSettings(BaseModel):
     enabled: bool = True
 
 
+class McpServerSettings(BaseModel):
+    name: str
+    url: str
+    timeout_seconds: int = 15
+    max_concurrency: int = 8
+    auth_token_env: str | None = None
+
+
+class McpSettings(BaseModel):
+    global_max_concurrency: int = 32
+    servers: list[McpServerSettings] = []
+
+
 class RagSettings(BaseModel):
     default: RagDefaultSettings = RagDefaultSettings()
     recall_budget: int = 20
@@ -250,6 +263,7 @@ class RagSettings(BaseModel):
     engine: EngineSettings = EngineSettings()
     memory: MemorySettings = MemorySettings()
     rate_limit: RateLimitSettings = RateLimitSettings()
+    mcp: McpSettings = McpSettings()
 
 
 class LoggingSettings(BaseModel):

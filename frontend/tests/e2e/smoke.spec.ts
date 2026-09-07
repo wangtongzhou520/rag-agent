@@ -1438,3 +1438,130 @@ test("switches agent profiles and edits an effective prompt slot", async ({ page
   await expect(page.getByRole("heading", { name: "智能体与 Prompt" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("agents-mobile.png"), fullPage: true });
 });
+
+test("inspects discovered MCP tools and runs an explicit debug call", async ({
+  page,
+}, testInfo) => {
+  const now = Date.parse("2026-09-05T09:00:00.000Z");
+  const servers = [
+    {
+      name: "internal",
+      url: "http://127.0.0.1:9099",
+      status: "online",
+      serverName: "ragent-mcp-server",
+      serverVersion: "0.0.1",
+      enabled: true,
+      toolCount: 3,
+      errorMessage: null,
+      discoveredAt: now,
+    },
+  ];
+  const tools = [
+    {
+      toolId: "internal:weather_query",
+      serverName: "internal",
+      name: "weather_query",
+      description: "查询国内主要城市的当前天气或未来天气",
+      inputSchema: {
+        type: "object",
+        properties: {
+          city: { type: "string" },
+          queryType: { type: "string", enum: ["current", "forecast"], default: "current" },
+          days: { type: "integer", default: 3 },
+        },
+        required: ["city"],
+      },
+      enabled: true,
+      serverEnabled: true,
+      linkedIntentCount: 1,
+    },
+    {
+      toolId: "internal:sales_query",
+      serverName: "internal",
+      name: "sales_query",
+      description: "查询销售汇总、排行、明细或趋势",
+      inputSchema: { type: "object", properties: { period: { type: "string" } } },
+      enabled: true,
+      serverEnabled: true,
+      linkedIntentCount: 0,
+    },
+    {
+      toolId: "internal:ticket_query",
+      serverName: "internal",
+      name: "ticket_query",
+      description: "查询最近三十天服务工单",
+      inputSchema: { type: "object", properties: { status: { type: "string" } } },
+      enabled: false,
+      serverEnabled: true,
+      linkedIntentCount: 0,
+    },
+  ];
+
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/mcp/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith("/mcp/servers")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result(servers)),
+      });
+    }
+    if (path.endsWith("/mcp/tools")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(result({ tools, total: tools.length })),
+      });
+    }
+    if (path.endsWith("/mcp/tools/internal/weather_query/debug")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({
+            toolId: "internal:weather_query",
+            success: true,
+            content: "北京未来两天天气",
+            structuredContent: {
+              city: "北京",
+              queryType: "forecast",
+              forecasts: [
+                { date: "2026-09-05", weather: "晴", lowCelsius: 20, highCelsius: 29 },
+                { date: "2026-09-06", weather: "多云", lowCelsius: 19, highCelsius: 27 },
+              ],
+            },
+            durationMs: 18,
+          }),
+        ),
+      });
+    }
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(result(null)) });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/admin/mcp");
+  await expect(page.getByRole("heading", { name: "MCP 管理与调试" })).toBeVisible();
+  await expect(page.getByText("ragent-mcp-server")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "weather_query" })).toBeVisible();
+  await expect(page.getByText("可参与问答")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("mcp-tools-desktop.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "调试调用" }).click();
+  await page
+    .getByLabel("MCP 调试参数")
+    .fill(JSON.stringify({ city: "北京", queryType: "forecast", days: 2 }, null, 2));
+  await page.getByRole("button", { name: "运行调试" }).click();
+  await expect(page.getByRole("dialog").getByText("成功", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog").getByText(/highCelsius/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("mcp-debug-result.png"), fullPage: true });
+
+  await page.getByRole("dialog").press("Escape");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "MCP 管理与调试" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("mcp-tools-mobile.png"), fullPage: true });
+});

@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import asyncpg
 import httpx
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from app.admin.agents.schemas import AgentProfileWrite
 from app.admin.agents.service import AgentAdminService
 from app.admin.dashboard import NO_DOCUMENT_ANSWER, DashboardService
+from app.admin.mcp.service import McpAdminService
 from app.core.chunk.service import ChunkingService
 from app.core.ingest.kernel import ChunkEmbeddingService, DefaultIngestionKernel
 from app.core.ingest.writer import PgChunkIndexWriter
@@ -48,6 +50,9 @@ from app.knowledge.models import (
 from app.knowledge.tasks import KnowledgeTaskHandler
 from app.rag.conversation import ConversationService
 from app.rag.feedback import MessageFeedbackService, MessageFeedbackTaskHandler
+from app.rag.mcp.executor import McpClientToolExecutor
+from app.rag.mcp.models import McpServerSnapshot, ToolDefinition
+from app.rag.mcp.registry import McpToolRegistry
 from app.rag.memory.store import ConversationMemoryStore
 from app.rag.models import (
     Conversation,
@@ -313,6 +318,76 @@ async def test_agent_profiles_prompt_fallback_and_cache_invalidation(
         keys = [key async for key in redis_client.scan_iter(f"{prefix}*")]
         if keys:
             await redis_client.delete(*keys)
+
+
+async def test_mcp_switches_and_debug_state_persist(
+    integration_engine: AsyncEngine,
+) -> None:
+    class FakeMcpClient:
+        async def call_tool(self, name, parameters, **kwargs):
+            assert name == "weather_query"
+            return SimpleNamespace(
+                content=[SimpleNamespace(type="text", text="weather result")],
+                structured_content={"city": parameters["city"], "weather": "晴"},
+                is_error=False,
+            )
+
+    class FakeMcpManager:
+        def __init__(self) -> None:
+            self.snapshot = McpServerSnapshot(
+                name="internal",
+                url="http://127.0.0.1:9099",
+                status="online",
+                server_name="ragent-mcp-server",
+                server_version="1.0.0",
+                tool_count=1,
+                discovered_at=1,
+            )
+
+        def snapshots(self) -> list[McpServerSnapshot]:
+            return [self.snapshot]
+
+        async def refresh(self, server_name: str) -> McpServerSnapshot:
+            assert server_name == "internal"
+            return self.snapshot
+
+    definition = ToolDefinition(
+        qualified_key="internal:weather_query",
+        server_name="internal",
+        name="weather_query",
+        description="天气查询",
+        input_schema={
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    )
+    executor = McpClientToolExecutor(FakeMcpClient(), definition, 5)
+    manager = FakeMcpManager()
+    registry = McpToolRegistry()
+    registry.replace_server("internal", [executor])
+    service = McpAdminService(integration_engine, manager, registry)
+
+    await service.set_server_enabled("internal", False, user_id=7)
+    assert registry.get_executor(definition.qualified_key) is None
+    await service.set_server_enabled("internal", True, user_id=7)
+    await service.set_tool_enabled(definition.qualified_key, False, user_id=7)
+    assert registry.get_executor(definition.qualified_key) is None
+    await service.set_tool_enabled(definition.qualified_key, True, user_id=7)
+    debug = await service.debug(definition.qualified_key, {"city": "北京"})
+    assert debug["success"] is True
+    assert debug["structuredContent"] == {"city": "北京", "weather": "晴"}
+
+    await service.set_server_enabled("internal", False, user_id=7)
+    await service.set_tool_enabled(definition.qualified_key, False, user_id=7)
+    restarted_registry = McpToolRegistry()
+    restarted_registry.replace_server("internal", [executor])
+    restarted_service = McpAdminService(
+        integration_engine, manager, restarted_registry
+    )
+    await restarted_service.apply_persisted_states()
+    assert restarted_registry.server_enabled("internal") is False
+    assert restarted_registry.get_executor(definition.qualified_key) is None
 
 
 async def test_redis_container_is_reachable(redis_client: Redis) -> None:

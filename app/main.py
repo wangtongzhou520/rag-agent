@@ -16,6 +16,7 @@ import app.framework.async_task
 import app.ingestion.models
 import app.knowledge.models
 import app.rag.intent.orm
+import app.rag.mcp.orm
 import app.rag.models
 import app.rag.prompt.models
 import app.rag.rewrite.orm
@@ -25,6 +26,8 @@ from app.admin.agents.router import router as agent_router
 from app.admin.agents.service import AgentAdminService
 from app.admin.dashboard import DashboardService
 from app.admin.dashboard import router as dashboard_router
+from app.admin.mcp.router import router as mcp_admin_router
+from app.admin.mcp.service import McpAdminService
 from app.core.chunk.service import ChunkingService
 from app.core.ingest.kernel import ChunkEmbeddingService
 from app.core.parser.detector import MimeTypeDetector
@@ -51,6 +54,10 @@ from app.rag.intent.guidance import IntentGuidanceService, ModelAmbiguityChecker
 from app.rag.intent.resolver import IntentResolver
 from app.rag.intent.router import router as intent_router
 from app.rag.intent.service import IntentTreeService
+from app.rag.mcp.client import McpClientManager
+from app.rag.mcp.registry import McpToolRegistry
+from app.rag.mcp.runtime import McpQuestionExecutor
+from app.rag.mcp.service import McpIntentDispatcher
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.memory.store import ConversationMemoryStore
 from app.rag.pipeline.stream_chat import StreamChatPipeline
@@ -121,6 +128,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # 模型运行时与问答链路装配（docs/04 §2 三层结构、docs/01 §11 模块落点）
     model_runtime = build_model_runtime(settings)
+    mcp_registry = McpToolRegistry()
+    mcp_manager = McpClientManager(settings.rag.mcp, mcp_registry)
+    await mcp_manager.discover_all()
+    mcp_admin_service = McpAdminService(engine, mcp_manager, mcp_registry)
+    if settings.datasource.auto_ddl:
+        await mcp_admin_service.apply_persisted_states()
     memory_service = ConversationMemoryService(
         ConversationMemoryStore(engine),
         history_keep_turns=settings.rag.memory.history_keep_turns,
@@ -191,6 +204,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         model_runtime.llm,
         retrieval,
         intent_resolver,
+        mcp_dispatcher=McpIntentDispatcher(
+            McpQuestionExecutor(
+                mcp_registry,
+                model_runtime.llm,
+                settings.rag.mcp.global_max_concurrency,
+                {
+                    server.name: server.max_concurrency
+                    for server in settings.rag.mcp.servers
+                },
+            )
+        ),
         guidance=IntentGuidanceService(
             enabled=guidance_settings.enabled,
             score_ratio=guidance_settings.ambiguity_score_ratio,
@@ -211,6 +235,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.http = http_client
     app.state.model_runtime = model_runtime
     app.state.agent_admin_service = agent_admin_service
+    app.state.mcp_admin_service = mcp_admin_service
     auth_service = AuthService(
         engine, redis_client, settings.auth, settings.redis
     )
@@ -269,6 +294,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await mcp_manager.close()
         await engine.dispose()
         await redis_client.aclose()
         await http_client.aclose()
@@ -325,6 +351,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_router)
     app.include_router(ingestion_router)
     app.include_router(agent_router)
+    app.include_router(mcp_admin_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 

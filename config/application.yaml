@@ -135,6 +135,13 @@ rag:
     history_keep_turns: 8
   rate_limit:
     enabled: true
+  mcp:
+    global_max_concurrency: 32
+    servers:
+      - name: internal
+        url: http://127.0.0.1:9099
+        timeout_seconds: 15
+        max_concurrency: 8
 
 logging:
   level: INFO

@@ -1,0 +1,611 @@
+/* MCP 管理：连接登记册与工具检查台 */
+.mcp-page-header > button svg,
+.mcp-server-rack > header svg,
+.mcp-tool-list-panel > header svg,
+.mcp-tool-inspector button svg,
+.mcp-schema-panel > header svg {
+  width: 15px;
+  height: 15px;
+}
+
+.mcp-summary-strip {
+  display: grid;
+  min-height: 72px;
+  grid-template-columns: auto auto minmax(260px, 1fr);
+  align-items: center;
+  gap: 26px;
+  margin-top: 28px;
+  padding: 12px 17px;
+  border: 1px solid var(--blue-200);
+  border-left: 4px solid var(--blue-600);
+  border-radius: 8px;
+  background: white;
+}
+.mcp-summary-strip > div {
+  display: grid;
+  grid-template-columns: 22px auto auto;
+  align-items: baseline;
+  column-gap: 7px;
+}
+.mcp-summary-strip > div > svg {
+  width: 16px;
+  height: 16px;
+  grid-row: 1 / 3;
+  align-self: center;
+  color: var(--blue-600);
+}
+.mcp-summary-strip > div > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.mcp-summary-strip > div > strong {
+  color: var(--blue-700);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 18px;
+}
+.mcp-summary-strip > div > small {
+  grid-column: 2 / 4;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+.mcp-summary-strip > p {
+  margin: 0;
+  padding-left: 20px;
+  border-left: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.mcp-server-rack,
+.mcp-tool-workbench {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 1px 2px rgb(16 42 86 / 3%);
+}
+.mcp-server-rack > header,
+.mcp-tool-list-panel > header,
+.mcp-schema-panel > header {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.mcp-server-rack > header > div,
+.mcp-tool-list-panel > header > div,
+.mcp-schema-panel > header > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mcp-server-rack h2,
+.mcp-tool-list-panel h2 {
+  margin: 0;
+  font-size: 13px;
+}
+.mcp-server-rack > header > span,
+.mcp-tool-list-panel > header > span,
+.mcp-schema-panel > header > span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.mcp-server-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+.mcp-server-card {
+  display: grid;
+  min-height: 76px;
+  grid-template-columns: 38px minmax(0, 1fr) 70px auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+.mcp-server-mark {
+  position: relative;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--blue-200);
+  border-radius: 7px;
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.mcp-server-mark svg {
+  width: 17px;
+  height: 17px;
+}
+.mcp-server-mark span {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.status-online .mcp-server-mark span {
+  background: var(--success);
+}
+.status-connecting .mcp-server-mark span {
+  background: var(--warning);
+}
+.mcp-server-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.mcp-server-copy > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mcp-server-copy strong {
+  font-size: 13px;
+}
+.mcp-server-copy i {
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #08784b;
+  background: #e7f7f0;
+  font-size: 9px;
+  font-style: normal;
+}
+.status-offline .mcp-server-copy i,
+.mcp-server-copy i.disabled {
+  color: var(--text-muted);
+  background: #edf1f6;
+}
+.mcp-server-copy code {
+  overflow: hidden;
+  color: var(--blue-700);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-server-copy > span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-server-meta {
+  display: grid;
+  justify-items: center;
+  padding: 5px 12px;
+  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+.mcp-server-meta strong {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 16px;
+}
+.mcp-server-meta span {
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+}
+.mcp-server-actions {
+  display: flex;
+  gap: 3px;
+}
+.mcp-server-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.mcp-server-actions button:hover {
+  color: var(--blue-700);
+  background: var(--blue-50);
+}
+.mcp-server-actions svg {
+  width: 13px;
+  height: 13px;
+}
+
+.mcp-tool-workbench {
+  display: grid;
+  min-height: 520px;
+  grid-template-columns: 330px minmax(0, 1fr);
+  overflow: hidden;
+}
+.mcp-tool-list-panel {
+  border-right: 1px solid var(--border);
+  background: #f9fbfe;
+}
+.mcp-tool-list {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+}
+.mcp-tool-list > button {
+  display: grid;
+  width: 100%;
+  min-height: 59px;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--text-primary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.mcp-tool-list > button:hover {
+  border-color: var(--blue-100);
+  background: white;
+}
+.mcp-tool-list > button.active {
+  border-color: var(--blue-200);
+  background: white;
+  box-shadow: inset 3px 0 var(--blue-600);
+}
+.mcp-tool-list > button > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.mcp-tool-list > button > span.enabled {
+  background: var(--success);
+}
+.mcp-tool-list > button > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.mcp-tool-list strong {
+  font-size: 12px;
+}
+.mcp-tool-list code {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-tool-list i {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-style: normal;
+}
+.mcp-tool-inspector {
+  min-width: 0;
+}
+.mcp-tool-inspector > header {
+  display: flex;
+  min-height: 128px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.mcp-tool-inspector > header > div:first-child > span {
+  color: var(--blue-600);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  font-weight: 650;
+}
+.mcp-tool-inspector h2 {
+  margin: 5px 0 4px;
+  font-size: 21px;
+  letter-spacing: -0.02em;
+}
+.mcp-tool-inspector > header p {
+  max-width: 570px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.mcp-tool-inspector > header > div:last-child {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+.mcp-tool-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 18px 24px 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.mcp-tool-facts > div {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--border);
+}
+.mcp-tool-facts > div:last-child {
+  border-right: 0;
+}
+.mcp-tool-facts span {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+.mcp-tool-facts strong {
+  font-family: "IBM Plex Mono", "Noto Sans SC", monospace;
+  font-size: 11px;
+}
+.mcp-tool-facts strong.success {
+  color: #08784b;
+}
+.mcp-tool-facts strong.muted {
+  color: var(--text-muted);
+}
+.mcp-schema-panel {
+  margin: 14px 24px 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.mcp-schema-panel > header {
+  min-height: 43px;
+  background: #fbfdff;
+}
+.mcp-schema-panel > header strong {
+  font-size: 11px;
+}
+.mcp-schema-panel pre {
+  max-height: 265px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px 16px;
+  color: #273b5b;
+  background: white;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.mcp-inspector-footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 24px 20px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+.mcp-inspector-footer svg {
+  width: 12px;
+  height: 12px;
+}
+.mcp-page-state {
+  display: grid;
+  min-height: 140px;
+  place-items: center;
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mcp-page-state.error,
+.mcp-form-error {
+  color: var(--danger);
+}
+
+.mcp-debug-dialog {
+  width: min(960px, calc(100vw - 32px));
+}
+.mcp-debug-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.mcp-debug-kicker span {
+  color: var(--blue-700);
+  font-size: 10px;
+  font-weight: 700;
+}
+.mcp-debug-kicker code {
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+.mcp-debug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 20px;
+}
+.mcp-debug-grid > section {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.mcp-debug-grid > section > header {
+  display: flex;
+  min-height: 43px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfdff;
+}
+.mcp-debug-grid > section > header strong {
+  font-size: 11px;
+}
+.mcp-debug-grid > section > header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+}
+.mcp-debug-grid > section > header > span.success {
+  color: #08784b;
+}
+.mcp-debug-grid > section > header > span.failed {
+  color: var(--danger);
+}
+.mcp-debug-grid > section > header svg {
+  width: 12px;
+  height: 12px;
+}
+.mcp-debug-grid textarea {
+  width: 100%;
+  min-height: 320px;
+  resize: vertical;
+  padding: 14px;
+  border: 0;
+  outline: 0;
+  color: #273b5b;
+  background: white;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.mcp-form-error {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid #ffd4d8;
+  background: #fff7f8;
+  font-size: 10px;
+}
+.mcp-debug-empty {
+  display: grid;
+  min-height: 320px;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.mcp-debug-empty svg {
+  width: 24px;
+  height: 24px;
+  color: var(--blue-300);
+}
+.mcp-debug-output {
+  min-height: 320px;
+  padding: 12px;
+}
+.mcp-debug-output > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+}
+.mcp-debug-output > span svg {
+  width: 11px;
+  height: 11px;
+}
+.mcp-debug-output pre {
+  max-height: 280px;
+  overflow: auto;
+  margin: 11px 0 0;
+  white-space: pre-wrap;
+  color: #273b5b;
+  font-family: "IBM Plex Mono", "Noto Sans SC", monospace;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.mcp-debug-dialog .dialog-footer svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 1020px) {
+  .mcp-tool-workbench {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+  .mcp-tool-inspector > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 760px) {
+  .mcp-summary-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .mcp-summary-strip > p {
+    grid-column: 1 / 3;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+  .mcp-server-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+  .mcp-server-meta {
+    display: none;
+  }
+  .mcp-server-actions {
+    grid-column: 2;
+  }
+  .mcp-tool-workbench {
+    display: block;
+    overflow: visible;
+  }
+  .mcp-tool-list-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .mcp-tool-list {
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .mcp-tool-inspector > header,
+  .mcp-schema-panel,
+  .mcp-inspector-footer {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+  .mcp-tool-inspector > header {
+    margin: 0;
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .mcp-tool-inspector > header > div:last-child {
+    flex-wrap: wrap;
+  }
+  .mcp-tool-facts {
+    grid-template-columns: 1fr;
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+  .mcp-tool-facts > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .mcp-tool-facts > div:last-child {
+    border-bottom: 0;
+  }
+  .mcp-debug-grid {
+    grid-template-columns: 1fr;
+  }
+  .mcp-debug-grid textarea,
+  .mcp-debug-empty,
+  .mcp-debug-output {
+    min-height: 220px;
+  }
+}

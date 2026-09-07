@@ -1,6 +1,7 @@
 import {
   Activity,
   ArrowLeft,
+  Cable,
   Database,
   GitBranch,
   GitCommitHorizontal,
@@ -23,6 +24,7 @@ const modules = [
   [Database, "知识库管理", "/admin/knowledge-bases"],
   [GitCommitHorizontal, "Pipeline 与任务", "/admin/ingestion"],
   [UserRoundCog, "智能体与 Prompt", "/admin/agents"],
+  [Cable, "MCP 管理与调试", "/admin/mcp"],
   [GitBranch, "意图树", "/admin/intent-tree"],
   [Replace, "查询词映射", "/admin/mappings"],
   [Activity, "RAG Trace", "/admin/traces"],

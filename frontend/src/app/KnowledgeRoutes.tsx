@@ -24,6 +24,9 @@ const IngestionPage = lazy(() =>
 const AgentPage = lazy(() =>
   import("@/features/agents/AgentPage").then((module) => ({ default: module.AgentPage })),
 );
+const McpPage = lazy(() =>
+  import("@/features/mcp/McpPage").then((module) => ({ default: module.McpPage })),
+);
 const DocumentPage = lazy(() =>
   import("@/features/knowledge/DocumentPage").then((module) => ({
     default: module.DocumentPage,
@@ -90,6 +93,10 @@ export function IngestionRoute() {
 
 export function AgentRoute() {
   return <KnowledgeRoute Page={AgentPage} label="智能体与 Prompt" />;
+}
+
+export function McpRoute() {
+  return <KnowledgeRoute Page={McpPage} label="MCP 管理与调试" />;
 }
 
 export function DocumentRoute() {
