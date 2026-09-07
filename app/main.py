@@ -51,6 +51,7 @@ from app.rag.feedback import MessageFeedbackService
 from app.rag.intent.cache import IntentTreeCacheManager
 from app.rag.intent.classifier import DefaultIntentClassifier
 from app.rag.intent.guidance import IntentGuidanceService, ModelAmbiguityChecker
+from app.rag.intent.orm import ensure_intent_audit_columns
 from app.rag.intent.resolver import IntentResolver
 from app.rag.intent.router import router as intent_router
 from app.rag.intent.service import IntentTreeService
@@ -109,6 +110,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine: AsyncEngine = create_async_engine(settings.datasource.url, pool_pre_ping=True)
     if settings.datasource.auto_ddl:
         await init_schema(engine)
+        await ensure_intent_audit_columns(engine)
     redis_client = aioredis.Redis(
         host=settings.redis.host,
         port=settings.redis.port,

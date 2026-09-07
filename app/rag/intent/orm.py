@@ -1,6 +1,7 @@
 """意图树 PostgreSQL 持久化模型。"""
 
-from sqlalchemy import JSON, BigInteger, Identity, Index, Integer, SmallInteger, String, Text
+from sqlalchemy import JSON, BigInteger, Identity, Index, Integer, SmallInteger, String, Text, text
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.framework.db import AuditMixin, Base
@@ -24,3 +25,16 @@ class IntentNodeRecord(AuditMixin, Base):
     mcp_tool_id: Mapped[str | None] = mapped_column(String(256))
     top_k: Mapped[int | None] = mapped_column(Integer)
     enabled: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="1")
+    create_by: Mapped[int | None] = mapped_column(BigInteger)
+    update_by: Mapped[int | None] = mapped_column(BigInteger)
+
+
+async def ensure_intent_audit_columns(engine: AsyncEngine) -> None:
+    """为 create_all 无法变更的早期开发表补齐操作者列。"""
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("ALTER TABLE t_intent_node ADD COLUMN IF NOT EXISTS create_by BIGINT")
+        )
+        await connection.execute(
+            text("ALTER TABLE t_intent_node ADD COLUMN IF NOT EXISTS update_by BIGINT")
+        )

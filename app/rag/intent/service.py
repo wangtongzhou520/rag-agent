@@ -23,7 +23,7 @@ class IntentTreeService:
     async def create(self, data: dict, user_id: int) -> int:
         self._validate(data)
         async with self._sessions.begin() as session:
-            row = IntentNodeRecord(**self._record_data(data), created_by=user_id)
+            row = IntentNodeRecord(**self._record_data(data), create_by=user_id)
             session.add(row)
             await session.flush()
             result = int(row.id)
@@ -42,7 +42,7 @@ class IntentTreeService:
                 raise ValueError("意图节点不存在")
             for key, value in self._record_data(data).items():
                 setattr(row, key, value)
-            row.updated_by = user_id
+            row.update_by = user_id
         await self._cache.evict()
 
     async def delete(self, node_id: int) -> None:

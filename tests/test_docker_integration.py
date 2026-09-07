@@ -50,6 +50,9 @@ from app.knowledge.models import (
 from app.knowledge.tasks import KnowledgeTaskHandler
 from app.rag.conversation import ConversationService
 from app.rag.feedback import MessageFeedbackService, MessageFeedbackTaskHandler
+from app.rag.intent.cache import IntentTreeCacheManager
+from app.rag.intent.orm import IntentNodeRecord
+from app.rag.intent.service import IntentTreeService
 from app.rag.mcp.executor import McpClientToolExecutor
 from app.rag.mcp.models import McpServerSnapshot, ToolDefinition
 from app.rag.mcp.registry import McpToolRegistry
@@ -388,6 +391,54 @@ async def test_mcp_switches_and_debug_state_persist(
     await restarted_service.apply_persisted_states()
     assert restarted_registry.server_enabled("internal") is False
     assert restarted_registry.get_executor(definition.qualified_key) is None
+
+
+async def test_intent_tree_crud_persists_audit_fields(
+    integration_engine: AsyncEngine, redis_client: Redis
+) -> None:
+    prefix = f"ragent:integration:intent:{uuid.uuid4().hex}:"
+    service = IntentTreeService(
+        integration_engine, IntentTreeCacheManager(redis_client, prefix)
+    )
+    node_id = await service.create(
+        {
+            "intent_code": "integration-intent",
+            "name": "集成意图",
+            "level": 0,
+            "kind": 0,
+            "examples": ["集成测试问题"],
+            "collection_names": ["integration_collection"],
+            "enabled": True,
+        },
+        user_id=7,
+    )
+    await service.update(
+        node_id,
+        {
+            "intent_code": "integration-intent",
+            "name": "更新后的集成意图",
+            "level": 0,
+            "kind": 0,
+            "examples": ["更新后的问题"],
+            "collection_names": ["integration_collection"],
+            "enabled": True,
+        },
+        user_id=8,
+    )
+
+    sessions = async_sessionmaker(integration_engine, expire_on_commit=False)
+    async with sessions() as session:
+        row = await session.get(IntentNodeRecord, node_id)
+        assert row is not None
+        assert row.name == "更新后的集成意图"
+        assert row.create_by == 7
+        assert row.update_by == 8
+
+    await service.delete(node_id)
+    assert await service.list_tree() == []
+    keys = [key async for key in redis_client.scan_iter(f"{prefix}*")]
+    if keys:
+        await redis_client.delete(*keys)
 
 
 async def test_redis_container_is_reachable(redis_client: Redis) -> None:
