@@ -28,6 +28,9 @@ frontend/*.tsbuildinfo
 .env.*
 !.env.example
 
+# Runtime uploads (PDF, DOCX, images, etc.)
+resources/uploads/
+
 # IDE
 .idea/
 .vscode/
