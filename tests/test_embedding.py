@@ -7,6 +7,7 @@ import pytest
 
 from app.framework.exceptions import RemoteException
 from app.model_runtime.embedding.base import AbstractOpenAIStyleEmbeddingClient
+from app.model_runtime.embedding.providers import BaiLianEmbeddingClient
 from app.model_runtime.embedding.service import RoutingEmbeddingService
 from app.model_runtime.http import HttpClientFactory, ModelClientException
 from app.model_runtime.routing import (
@@ -153,6 +154,35 @@ async def test_client_batch_splitting_preserves_order() -> None:
     assert vectors == [[1.0], [2.0], [3.0], [4.0], [5.0]]
 
 
+async def test_bailian_client_splits_requests_at_provider_limit() -> None:
+    batches: list[list[str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        batches.append(body["input"])
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"index": index, "embedding": [float(index)]}
+                    for index, _ in enumerate(body["input"])
+                ]
+            },
+        )
+
+    client = BaiLianEmbeddingClient(
+        MockHttpFactory(handler),
+        "https://api.example.com",
+        "sk-x",
+        {"embedding": "/v1/embeddings"},
+    )
+
+    vectors = await client.embed([str(index) for index in range(45)], make_target())
+
+    assert [len(batch) for batch in batches] == [20, 20, 5]
+    assert len(vectors) == 45
+
+
 async def test_client_count_mismatch_raises_invalid_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": [{"index": 0, "embedding": [0.1]}]})
@@ -167,7 +197,10 @@ async def test_client_count_mismatch_raises_invalid_response() -> None:
 
 async def test_client_http_error_mapped_by_status() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(429, json={"error": "slow down"})
+        return httpx.Response(
+            429,
+            json={"error": {"code": "Throttling", "message": "slow down"}},
+        )
 
     client = AbstractOpenAIStyleEmbeddingClient(
         MockHttpFactory(handler), "https://api.example.com", "sk-x", {"embedding": "/v1/embeddings"}
@@ -176,3 +209,4 @@ async def test_client_http_error_mapped_by_status() -> None:
     with pytest.raises(ModelClientException) as exc_info:
         await client.embed(["a"], make_target())
     assert exc_info.value.http_status == 429
+    assert str(exc_info.value) == "provider 返回 HTTP 429: Throttling - slow down"

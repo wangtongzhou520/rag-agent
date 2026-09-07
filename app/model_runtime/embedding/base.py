@@ -95,8 +95,9 @@ class AbstractOpenAIStyleEmbeddingClient:
                 f"网络错误: {exc}", ModelClientErrorType.NETWORK_ERROR, cause=exc
             ) from exc
         if response.status_code != 200:
+            detail = _error_detail(response)
             raise ModelClientException(
-                f"provider 返回 HTTP {response.status_code}",
+                f"provider 返回 HTTP {response.status_code}{detail}",
                 ModelClientErrorType.from_http_status(response.status_code),
                 http_status=response.status_code,
             )
@@ -122,3 +123,23 @@ class AbstractOpenAIStyleEmbeddingClient:
                 ModelClientErrorType.INVALID_RESPONSE,
             )
         return vectors
+
+
+def _error_detail(response: httpx.Response) -> str:
+    """仅提取服务端错误码和消息，避免把完整响应或请求凭据写入日志。"""
+    try:
+        payload = response.json()
+    except ValueError:
+        message = response.text.strip()
+        return f": {message[:500]}" if message else ""
+    if not isinstance(payload, dict):
+        return ""
+    error = payload.get("error")
+    if isinstance(error, dict):
+        code = error.get("code")
+        message = error.get("message")
+    else:
+        code = payload.get("code")
+        message = payload.get("message") or error
+    parts = [str(item).strip() for item in (code, message) if item]
+    return f": {' - '.join(parts)[:500]}" if parts else ""

@@ -7,6 +7,10 @@ from app.model_runtime.routing import ModelProvider
 class BaiLianEmbeddingClient(AbstractOpenAIStyleEmbeddingClient):
     provider = ModelProvider.BAILIAN
 
+    def max_batch_size(self) -> int:
+        """百炼 qwen3.7-text-embedding 同步接口单次最多接收 20 条文本。"""
+        return 20
+
 
 class SiliconFlowEmbeddingClient(AbstractOpenAIStyleEmbeddingClient):
     provider = ModelProvider.SILICONFLOW

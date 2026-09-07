@@ -46,7 +46,8 @@ class KnowledgeTaskHandler:
         async with self._sessions.begin() as session:
             document = await session.get(KnowledgeDocument, doc_id)
             log = await session.get(KnowledgeDocumentChunkLog, log_id)
-            status = "failed" if terminal else "pending"
+            # 队列等待下一次重试不代表用户尚未开始分块；文档仍属于处理中。
+            status = "failed" if terminal else "running"
             if document is not None:
                 document.status = status
             if log is not None:
