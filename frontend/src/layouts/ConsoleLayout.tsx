@@ -9,6 +9,7 @@ import {
   LogOut,
   Replace,
   ScrollText,
+  Settings2,
   UserRoundCog,
   UsersRound,
 } from "lucide-react";
@@ -25,6 +26,7 @@ const modules = [
   [GitCommitHorizontal, "Pipeline 与任务", "/admin/ingestion"],
   [UserRoundCog, "智能体与 Prompt", "/admin/agents"],
   [Cable, "MCP 管理与调试", "/admin/mcp"],
+  [Settings2, "运行时与模型", "/admin/settings"],
   [GitBranch, "意图树", "/admin/intent-tree"],
   [Replace, "查询词映射", "/admin/mappings"],
   [Activity, "RAG Trace", "/admin/traces"],

@@ -27,6 +27,11 @@ const AgentPage = lazy(() =>
 const McpPage = lazy(() =>
   import("@/features/mcp/McpPage").then((module) => ({ default: module.McpPage })),
 );
+const RuntimeSettingsPage = lazy(() =>
+  import("@/features/runtime/RuntimeSettingsPage").then((module) => ({
+    default: module.RuntimeSettingsPage,
+  })),
+);
 const DocumentPage = lazy(() =>
   import("@/features/knowledge/DocumentPage").then((module) => ({
     default: module.DocumentPage,
@@ -97,6 +102,10 @@ export function AgentRoute() {
 
 export function McpRoute() {
   return <KnowledgeRoute Page={McpPage} label="MCP 管理与调试" />;
+}
+
+export function RuntimeSettingsRoute() {
+  return <KnowledgeRoute Page={RuntimeSettingsPage} label="运行时与模型设置" />;
 }
 
 export function DocumentRoute() {

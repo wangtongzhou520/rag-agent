@@ -28,6 +28,8 @@ from app.admin.dashboard import DashboardService
 from app.admin.dashboard import router as dashboard_router
 from app.admin.mcp.router import router as mcp_admin_router
 from app.admin.mcp.service import McpAdminService
+from app.admin.runtime.router import router as runtime_settings_router
+from app.admin.runtime.service import RuntimeSettingsService
 from app.core.chunk.service import ChunkingService
 from app.core.ingest.kernel import ChunkEmbeddingService
 from app.core.parser.detector import MimeTypeDetector
@@ -130,6 +132,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # 模型运行时与问答链路装配（docs/04 §2 三层结构、docs/01 §11 模块落点）
     model_runtime = build_model_runtime(settings)
+    runtime_settings_service = RuntimeSettingsService(settings, model_runtime)
     mcp_registry = McpToolRegistry()
     mcp_manager = McpClientManager(settings.rag.mcp, mcp_registry)
     await mcp_manager.discover_all()
@@ -236,6 +239,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.redis = redis_client
     app.state.http = http_client
     app.state.model_runtime = model_runtime
+    app.state.runtime_settings_service = runtime_settings_service
     app.state.agent_admin_service = agent_admin_service
     app.state.mcp_admin_service = mcp_admin_service
     auth_service = AuthService(
@@ -354,6 +358,7 @@ def create_app() -> FastAPI:
     app.include_router(ingestion_router)
     app.include_router(agent_router)
     app.include_router(mcp_admin_router)
+    app.include_router(runtime_settings_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 

@@ -1565,3 +1565,132 @@ test("inspects discovered MCP tools and runs an explicit debug call", async ({
   await expect(page.getByRole("heading", { name: "MCP 管理与调试" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("mcp-tools-mobile.png"), fullPage: true });
 });
+
+test("inspects runtime routing and masked provider settings", async ({ page }, testInfo) => {
+  const health = (state = "closed", retryAfterMs = 0) => ({
+    state,
+    consecutiveFailures: 0,
+    retryAfterMs,
+  });
+  const candidate = (
+    id: string,
+    provider: string,
+    availability: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    id,
+    provider,
+    model: id === "qwen-plus" ? "qwen-plus-latest" : id,
+    enabled: true,
+    providerConfigured: availability !== "unconfigured",
+    availability,
+    health:
+      availability === "circuit_open" ? health("open", 18_000) : health(),
+    priority: 1,
+    ...extra,
+  });
+  const runtime = {
+    readOnly: true,
+    sourcePriority: ["environment", "application.yaml", "defaults"],
+    engine: { type: "workflow" },
+    backends: { vector: { type: "pg" }, keyword: { type: "none" }, graph: { type: "none" } },
+    rag: {
+      default: { dimension: 1536, topK: 10, sseTimeoutMs: 300_000 },
+      search: {
+        recallBudget: 20,
+        rerankCandidateLimit: 40,
+        retrievalTimeoutMs: 15_000,
+        queryRewrite: { enabled: true, timeoutMs: 5_000 },
+        scope: { minIntentScore: 0.35, confidenceThreshold: 0.6, supplementRatio: 0.25 },
+        fusion: {
+          strategy: "weighted-rrf",
+          rrfK: 20,
+          channelWeights: { vector: 1, keyword: 1, graph: 0.8, web: 0.5 },
+        },
+      },
+      memory: { historyKeepTurns: 8, titleMaxLength: 30 },
+      rateLimit: { enabled: true },
+    },
+    ai: {
+      providers: {
+        ollama: {
+          url: "http://localhost:11434",
+          apiKey: null,
+          configured: true,
+          endpoints: { chat: "/v1/chat/completions", embedding: "/v1/embeddings" },
+        },
+        bailian: {
+          url: "https://model.example/v1",
+          apiKey: "abcdef***7890",
+          configured: true,
+          endpoints: { chat: "/chat/completions", embedding: "/embeddings" },
+        },
+        siliconflow: { url: "https://sf.example", apiKey: null, configured: false, endpoints: {} },
+        aihubmix: { url: "https://mix.example", apiKey: null, configured: false, endpoints: {} },
+        noop: { url: null, apiKey: null, configured: true, endpoints: {} },
+      },
+      chat: {
+        defaultTier: "standard",
+        deepThinkingTier: "deep",
+        tiers: {
+          fast: { candidates: ["qwen-flash", "qwen-plus", "qwen3-local"], timeoutMs: 5_000 },
+          standard: { candidates: ["qwen3-max", "qwen-plus", "qwen3-local"], timeoutMs: 30_000 },
+          deep: { candidates: ["qwen3-max"], timeoutMs: 120_000 },
+        },
+        candidates: [
+          candidate("qwen-flash", "bailian", "ready", { tiers: ["fast"] }),
+          candidate("qwen-plus", "bailian", "circuit_open", { tiers: ["fast", "standard"] }),
+          candidate("qwen3-local", "ollama", "unconfigured", { tiers: ["fast", "standard"] }),
+          candidate("qwen3-max", "bailian", "ready", {
+            tiers: ["standard", "deep"],
+            supportsThinking: true,
+          }),
+        ],
+      },
+      embedding: {
+        defaultModel: "qwen3.7-text-embedding",
+        candidates: [
+          candidate("qwen3.7-text-embedding", "bailian", "ready", {
+            isDefault: true,
+            dimension: 1536,
+          }),
+        ],
+      },
+      rerank: {
+        defaultModel: "qwen3-rerank",
+        candidates: [
+          candidate("qwen3-rerank", "bailian", "ready", { isDefault: true }),
+          candidate("rerank-noop", "noop", "ready"),
+        ],
+      },
+      selection: { failureThreshold: 2, openDurationMs: 30_000 },
+      stream: { messageChunkSize: 5 },
+    },
+    storage: { localDir: "resources/uploads" },
+  };
+
+  await page.addInitScript(() => window.localStorage.setItem("ragent.auth.token", "e2e-token"));
+  await page.route("**/api/ragent/user/me", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
+    }),
+  );
+  await page.route("**/api/ragent/rag/settings", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(result(runtime)) }),
+  );
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/admin/settings");
+  await expect(page.getByRole("heading", { name: "运行时与模型设置" })).toBeVisible();
+  await expect(page.getByText("Chat 路由档位")).toBeVisible();
+  await expect(page.getByText("熔断中", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("abcdef***7890")).toBeVisible();
+  await page.getByRole("button", { name: "Embedding" }).click();
+  await expect(page.getByText("qwen3.7-text-embedding").first()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("runtime-settings-desktop.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "运行时与模型设置" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("runtime-settings-mobile.png"), fullPage: true });
+});
