@@ -135,6 +135,12 @@ rag:
     history_keep_turns: 8
   rate_limit:
     enabled: true
+    global:
+      enabled: true
+      max_concurrent: 50
+      max_wait_seconds: 20
+      lease_seconds: 600
+      poll_interval_ms: 200
   mcp:
     global_max_concurrency: 32
     servers:

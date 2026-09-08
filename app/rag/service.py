@@ -11,6 +11,7 @@ from app.framework.trace_ctx import reset_trace_id, set_trace_id
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.pipeline.event_handler import StreamChatEventHandler
 from app.rag.pipeline.stream_chat import StreamChatContext, StreamChatPipeline
+from app.rag.ratelimit import ChatQueueLimiter, Permit
 from app.rag.trace.record import RagTraceRecordService
 
 logger = get_logger(__name__)
@@ -26,12 +27,14 @@ class RAGChatService:
         settings: Settings,
         trace: RagTraceRecordService | None = None,
         task_manager: StreamTaskManager | None = None,
+        chat_limiter: ChatQueueLimiter | None = None,
     ) -> None:
         self._memory = memory
         self._pipeline = pipeline
         self._settings = settings
         self._trace = trace
         self._task_manager = task_manager
+        self._chat_limiter = chat_limiter
 
     async def stream_chat(
         self,
@@ -87,6 +90,7 @@ class RAGChatService:
                 resolved_task_id, user_id, handler.on_cancelled
             )
             await self._task_manager.bind_cancel(resolved_task_id, cancel_producer)
+        permit: Permit | None = None
         try:
             async with asyncio.timeout(
                 self._settings.rag.default.sse_timeout_ms / 1000
@@ -98,6 +102,12 @@ class RAGChatService:
                         task_id=resolved_task_id,
                     ),
                 )
+                if self._chat_limiter is not None:
+                    permit = await self._chat_limiter.acquire(resolved_task_id)
+                    if permit is None:
+                        trace_status = "REJECTED"
+                        await handler.on_rejected(question, "系统繁忙，请稍后再试")
+                        return
                 await self._pipeline.execute(ctx, handler)
         except asyncio.CancelledError:
             trace_status = "ERROR"
@@ -110,6 +120,20 @@ class RAGChatService:
             logger.exception("stream chat producer failed", task_id=resolved_task_id)
             await sender.fail(exc)
         finally:
+            if permit is not None and self._chat_limiter is not None:
+                try:
+                    released = await self._chat_limiter.release(permit)
+                    if not released:
+                        logger.debug(
+                            "chat rate-limit permit already expired",
+                            task_id=resolved_task_id,
+                        )
+                except Exception:
+                    # Redis 故障时由租约回收，不能阻断 trace 和任务注册表收尾。
+                    logger.exception(
+                        "chat rate-limit permit release failed",
+                        task_id=resolved_task_id,
+                    )
             if trace_data and self._trace is not None:
                 await self._trace.finish_run(
                     trace_data[0], trace_data[1], trace_status, trace_error

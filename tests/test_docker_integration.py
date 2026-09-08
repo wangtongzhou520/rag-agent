@@ -69,6 +69,7 @@ from app.rag.models import (
 from app.rag.prompt.cache import AgentPromptCache
 from app.rag.prompt.resolver import AgentPromptResolver
 from app.rag.prompt.slots import AgentPromptSlot
+from app.rag.ratelimit import FairDistributedRateLimiter, PermitExpirableSemaphore
 from app.rag.recommend import RecommendedQuestionService
 from app.rag.retrieval.metadata import ChunkMetadataResolver
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
@@ -213,6 +214,142 @@ async def test_redis_stream_cancel_broadcasts_between_instances(
             f"{prefix}stream:owner:task-remote",
             f"{prefix}stream:cancel:task-remote",
         )
+
+
+async def test_redis_expirable_semaphore_recovers_and_releases_idempotently(
+    redis_client: Redis,
+) -> None:
+    name = f"ragent:test:semaphore:{uuid.uuid4()}"
+    semaphore = PermitExpirableSemaphore(redis_client, name)
+    try:
+        assert await semaphore.try_set_permits(1) is True
+        assert await semaphore.try_set_permits(9) is False
+        first = await semaphore.try_acquire(0.05)
+        assert first is not None
+        assert await semaphore.available_permits() == 0
+        assert await semaphore.try_release(first) is True
+        assert await semaphore.try_release(first) is False
+        assert await semaphore.available_permits() == 1
+
+        expired = await semaphore.try_acquire(0.05)
+        assert expired is not None
+        await asyncio.sleep(0.07)
+        assert await semaphore.available_permits() == 1
+        assert await semaphore.try_release(expired) is False
+    finally:
+        keys = [key async for key in redis_client.scan_iter(f"{name}*")]
+        if keys:
+            await redis_client.delete(*keys)
+
+
+async def test_two_rate_limiter_instances_preserve_fifo_and_global_capacity(
+    redis_client: Redis,
+) -> None:
+    name = f"ragent:test:fair:{uuid.uuid4()}"
+    first = FairDistributedRateLimiter(
+        redis_client,
+        name=name,
+        max_concurrent=1,
+        max_wait_seconds=3,
+        lease_seconds=5,
+        poll_interval_ms=10,
+    )
+    second = FairDistributedRateLimiter(
+        redis_client,
+        name=name,
+        max_concurrent=1,
+        max_wait_seconds=3,
+        lease_seconds=5,
+        poll_interval_ms=10,
+    )
+    await first.start()
+    await second.start()
+    holder = await first.acquire("holder")
+    assert holder is not None
+    grant_order: list[int] = []
+
+    async def wait_for_permit(index: int) -> None:
+        limiter = first if index % 2 == 0 else second
+        permit = await limiter.acquire(f"request-{index}")
+        assert permit is not None
+        grant_order.append(index)
+        await asyncio.sleep(0.002)
+        assert await limiter.release(permit) is True
+
+    tasks: list[asyncio.Task[None]] = []
+    try:
+        for index in range(40):
+            tasks.append(asyncio.create_task(wait_for_permit(index)))
+            expected = index + 1
+            for _ in range(100):
+                if await redis_client.zcard(f"{name}:queue") == expected:
+                    break
+                await asyncio.sleep(0.002)
+            else:
+                pytest.fail(f"request {index} did not enter the distributed queue")
+
+        assert await first.release(holder) is True
+        await asyncio.gather(*tasks)
+        assert grant_order == list(range(40))
+        assert await redis_client.get(f"{name}:semaphore") == "1"
+        assert await redis_client.zcard(f"{name}:semaphore:permits") == 0
+        assert await redis_client.zcard(f"{name}:queue") == 0
+    finally:
+        for task in tasks:
+            task.cancel()
+        await first.close()
+        await second.close()
+        keys = [key async for key in redis_client.scan_iter(f"{name}*")]
+        if keys:
+            await redis_client.delete(*keys)
+
+
+async def test_two_rate_limiter_instances_never_exceed_global_capacity(
+    redis_client: Redis,
+) -> None:
+    name = f"ragent:test:capacity:{uuid.uuid4()}"
+    limiters = [
+        FairDistributedRateLimiter(
+            redis_client,
+            name=name,
+            max_concurrent=5,
+            max_wait_seconds=3,
+            lease_seconds=5,
+            poll_interval_ms=10,
+        )
+        for _ in range(2)
+    ]
+    for limiter in limiters:
+        await limiter.start()
+    active = 0
+    peak = 0
+    state_lock = asyncio.Lock()
+
+    async def execute(index: int) -> None:
+        nonlocal active, peak
+        limiter = limiters[index % len(limiters)]
+        permit = await limiter.acquire(f"request-{index}")
+        assert permit is not None
+        async with state_lock:
+            active += 1
+            peak = max(peak, active)
+        await asyncio.sleep(0.005)
+        async with state_lock:
+            active -= 1
+        assert await limiter.release(permit) is True
+
+    try:
+        await asyncio.gather(*(execute(index) for index in range(200)))
+        assert peak == 5
+        assert active == 0
+        assert await redis_client.get(f"{name}:semaphore") == "5"
+        assert await redis_client.zcard(f"{name}:semaphore:permits") == 0
+    finally:
+        for limiter in limiters:
+            await limiter.close()
+        keys = [key async for key in redis_client.scan_iter(f"{name}*")]
+        if keys:
+            await redis_client.delete(*keys)
 
 
 def _pdf_bytes() -> bytes:

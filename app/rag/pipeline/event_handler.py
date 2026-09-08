@@ -30,6 +30,7 @@ class StreamEventCallback(StreamCallback, Protocol):
 
     async def on_reply_to_message_id(self, message_id: str | None) -> None: ...
     async def on_cancelled(self) -> None: ...
+    async def on_rejected(self, question: str, message: str) -> None: ...
     async def on_sources(self, sources: list[SourceRef]) -> None: ...
     async def on_grounding_chunks(self, chunks: list[dict]) -> None: ...
     async def on_guidance(self, payload: GuidancePayload) -> None: ...
@@ -123,6 +124,20 @@ class StreamChatEventHandler:
         """取消收尾：已累积内容非空则以 INTERRUPTED 落库（docs/01 §9.2）。"""
         await self._finish(MessageStatus.INTERRUPTED)
 
+    async def on_rejected(self, question: str, message: str) -> None:
+        """排队超时：问题与拒绝消息落库，并发送完整 SSE 终态序列。"""
+        async with self._terminal_lock:
+            if self._terminal_task is None:
+                if self._terminal:
+                    return
+                self._terminal = True
+                self._terminal_task = asyncio.create_task(
+                    self._emit_rejected(question, message),
+                    name=f"stream-rejected:{self._task_id or self._conversation_id}",
+                )
+            terminal_task = self._terminal_task
+        await asyncio.shield(terminal_task)
+
     async def _finish(self, status: MessageStatus) -> None:
         """创建唯一且 shield 的终态任务，消除完成与取消并发收尾竞态。"""
         async with self._terminal_lock:
@@ -154,6 +169,40 @@ class StreamChatEventHandler:
                 title="新对话" if self._is_new_conversation else None,
                 sources=self._sources or None,
                 message_status=status,
+            ),
+        )
+        await self._sender.done()
+
+    async def _emit_rejected(self, question: str, message: str) -> None:
+        reply_to_message_id: str | None = None
+        message_id: str | None = None
+        try:
+            reply_to_message_id = await self._memory.append_user_message(
+                self._conversation_id, self._user_id, question
+            )
+            message_id = await self._memory.append_assistant_message(
+                self._conversation_id,
+                self._user_id,
+                message,
+                message_status=str(MessageStatus.REJECTED),
+                reply_to_message_id=reply_to_message_id,
+            )
+        except Exception:
+            logger.exception(
+                "rejected message persistence failed",
+                conversation_id=self._conversation_id,
+            )
+        await self._sender.send(
+            SseEventType.REJECT,
+            {"type": str(MessageDeltaType.RESPONSE), "content": message},
+        )
+        await self._sender.send(
+            SseEventType.FINISH,
+            CompletionPayload(
+                message_id=message_id,
+                title="新对话" if self._is_new_conversation else None,
+                sources=None,
+                message_status=MessageStatus.REJECTED,
             ),
         )
         await self._sender.done()

@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import (
     BaseSettings,
     InitSettingsSource,
@@ -230,8 +230,23 @@ class MemorySettings(BaseModel):
     title_max_length: int = 30
 
 
-class RateLimitSettings(BaseModel):
+class GlobalRateLimitSettings(BaseModel):
     enabled: bool = True
+    max_concurrent: int = Field(default=50, gt=0)
+    max_wait_seconds: float = Field(default=20, gt=0)
+    lease_seconds: float = Field(default=600, gt=0)
+    poll_interval_ms: int = Field(default=200, gt=0)
+
+
+class RateLimitSettings(BaseModel):
+    """问答流量保护配置；``enabled`` 保留为旧版总开关。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    enabled: bool = True
+    global_settings: GlobalRateLimitSettings = Field(
+        default_factory=GlobalRateLimitSettings, alias="global"
+    )
 
 
 class McpServerSettings(BaseModel):

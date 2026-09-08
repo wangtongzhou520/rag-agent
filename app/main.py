@@ -66,6 +66,7 @@ from app.rag.memory.store import ConversationMemoryStore
 from app.rag.pipeline.stream_chat import StreamChatPipeline
 from app.rag.prompt.cache import AgentPromptCache
 from app.rag.prompt.resolver import AgentPromptResolver
+from app.rag.ratelimit import ChatQueueLimiter
 from app.rag.recommend import RecommendedQuestionGenerator, RecommendedQuestionService
 from app.rag.retrieval.channels import VectorSearchChannel
 from app.rag.retrieval.engine import MultiChannelRetrievalEngine
@@ -207,6 +208,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         redis_client, key_prefix=settings.redis.key_prefix
     )
     await stream_task_manager.start()
+    rate_limit_settings = settings.rag.rate_limit.global_settings
+    chat_limiter = None
+    if settings.rag.rate_limit.enabled and rate_limit_settings.enabled:
+        chat_limiter = ChatQueueLimiter(
+            redis_client,
+            name=f"{settings.redis.key_prefix}global:chat",
+            max_concurrent=rate_limit_settings.max_concurrent,
+            max_wait_seconds=rate_limit_settings.max_wait_seconds,
+            lease_seconds=rate_limit_settings.lease_seconds,
+            poll_interval_ms=rate_limit_settings.poll_interval_ms,
+        )
+        await chat_limiter.start()
     pipeline = StreamChatPipeline(
         memory_service,
         model_runtime.llm,
@@ -255,6 +268,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings,
         trace=trace_service,
         task_manager=stream_task_manager,
+        chat_limiter=chat_limiter,
     )
     app.state.stream_task_manager = stream_task_manager
     app.state.conversation_service = ConversationService(
@@ -303,6 +317,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        if chat_limiter is not None:
+            await chat_limiter.close()
         await stream_task_manager.close()
         await mcp_manager.close()
         await engine.dispose()
