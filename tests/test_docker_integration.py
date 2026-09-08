@@ -1,5 +1,6 @@
 """本地 Docker 集成验收：PG 队列、M2 入库、pgvector 检索与 Redis。"""
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -35,6 +36,7 @@ from app.framework.db import init_schema
 from app.framework.exceptions import BizException
 from app.framework.result import ErrorCode, Results
 from app.framework.sse import RecommendedQuestionsPayload, RecommendedQuestionStatus
+from app.framework.stream_tasks import RedisStreamTaskManager
 from app.framework.task_queue import TaskQueue
 from app.ingestion.engine.engine import IngestionEngine
 from app.ingestion.schemas import DocumentSource, NodeConfig, PipelineCreate, TaskCreate
@@ -172,6 +174,45 @@ async def redis_client() -> AsyncIterator[Redis]:
         yield client
     finally:
         await client.aclose()
+
+
+async def test_redis_stream_cancel_broadcasts_between_instances(
+    redis_client: Redis,
+) -> None:
+    prefix = f"ragent:test:stream:{uuid.uuid4()}:"
+    source = RedisStreamTaskManager(redis_client, key_prefix=prefix)
+    target = RedisStreamTaskManager(redis_client, key_prefix=prefix)
+    cancelled = asyncio.Event()
+    calls: list[str] = []
+
+    async def action() -> None:
+        calls.append("action")
+
+    async def finalizer() -> None:
+        calls.append("finalizer")
+        cancelled.set()
+
+    await source.start()
+    await target.start()
+    try:
+        await asyncio.sleep(0.05)
+        await target.register("task-remote", 7, finalizer)
+        await target.bind_cancel("task-remote", action)
+
+        assert await source.cancel("task-remote", 8) is False
+        assert await source.cancel("task-remote", 7) is True
+        await asyncio.wait_for(cancelled.wait(), timeout=2)
+
+        assert calls == ["action", "finalizer"]
+        assert target.is_cancelled("task-remote") is True
+        assert await redis_client.get(f"{prefix}stream:cancel:task-remote") == "7"
+    finally:
+        await source.close()
+        await target.close()
+        await redis_client.delete(
+            f"{prefix}stream:owner:task-remote",
+            f"{prefix}stream:cancel:task-remote",
+        )
 
 
 def _pdf_bytes() -> bytes:

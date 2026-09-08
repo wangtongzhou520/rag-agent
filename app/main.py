@@ -40,7 +40,7 @@ from app.framework.exceptions import BizException
 from app.framework.ids import new_uuid7
 from app.framework.logging import get_logger, init_logging
 from app.framework.result import ErrorCode, Results
-from app.framework.stream_tasks import StreamTaskManager
+from app.framework.stream_tasks import RedisStreamTaskManager
 from app.framework.trace_ctx import reset_request_id, set_request_id
 from app.ingestion.api import router as ingestion_router
 from app.ingestion.engine.engine import IngestionEngine
@@ -203,7 +203,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         trace=trace_service,
     )
     guidance_settings = settings.rag.guidance
-    stream_task_manager = StreamTaskManager()
+    stream_task_manager = RedisStreamTaskManager(
+        redis_client, key_prefix=settings.redis.key_prefix
+    )
+    await stream_task_manager.start()
     pipeline = StreamChatPipeline(
         memory_service,
         model_runtime.llm,
@@ -300,6 +303,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await stream_task_manager.close()
         await mcp_manager.close()
         await engine.dispose()
         await redis_client.aclose()
