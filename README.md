@@ -26,7 +26,7 @@ F3 至此完成；F4 已交付系统概览、用户与审计、Pipeline 与任�
 内置默认助手、激活配置和 Redis 缓存组成运行时回落链；现有闲聊、知识库、MCP 与推荐问题
 路径已接入。MCP 页面可检查 Server/Tool、持久化启停并用显式 JSON 参数调试；运行登记册
 可核对脱敏 Provider、三档模型路由和熔断状态。F4 规划完成；M5 已接入 Redis
-跨实例流任务取消、FIFO 问答限流、PG Worker 崩溃恢复，以及提交/消费幂等保护。
+跨实例流任务取消、FIFO 问答限流、PG Worker 崩溃恢复、提交/消费幂等保护和本地容量基准。
 详细规划见
 `08-前端工程与页面设计.md`。
 
@@ -70,6 +70,7 @@ npm run e2e                                    # 首次运行需 npx playwright 
 
 ```bash
 RAGENT_RUN_INTEGRATION=1 uv run --env-file .env pytest -m integration -q
+RAGENT_DATASOURCE__PASSWORD='<local-password>' uv run python -m scripts.benchmark_m5
 ```
 
 ## 实施顺序

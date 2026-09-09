@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any
 
 from app.framework.logging import get_logger
@@ -39,6 +40,13 @@ return ARGV[5]
 """
 
 
+@dataclass(slots=True)
+class _Waiter:
+    score: int
+    deadline: float
+    future: asyncio.Future[Permit | None]
+
+
 class FairDistributedRateLimiter:
     """每次只从存活队头发放许可，确保跨实例严格 FIFO。"""
 
@@ -68,8 +76,11 @@ class FairDistributedRateLimiter:
         # redis-py 的默认连接池是有界的；突发入队/轮询先在实例内背压，
         # 避免尚未进入全局队列就因连接池耗尽而失败。
         self._redis_gate = asyncio.Semaphore(16)
-        self._notify = asyncio.Event()
+        self._pending: dict[str, _Waiter] = {}
+        self._pending_lock = asyncio.Lock()
+        self._dispatch_event = asyncio.Event()
         self._subscriber_task: asyncio.Task[None] | None = None
+        self._dispatcher_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         await self._semaphore.try_set_permits(self._max_concurrent)
@@ -77,19 +88,33 @@ class FairDistributedRateLimiter:
             self._subscriber_task = asyncio.create_task(
                 self._subscribe(), name=f"rate-limit-notify:{self._name}"
             )
+        if self._dispatcher_task is None:
+            self._dispatcher_task = asyncio.create_task(
+                self._dispatch(), name=f"rate-limit-dispatch:{self._name}"
+            )
 
     async def close(self) -> None:
-        task = self._subscriber_task
+        tasks = [self._dispatcher_task, self._subscriber_task]
+        self._dispatcher_task = None
         self._subscriber_task = None
-        if task is not None:
-            task.cancel()
+        for task in tasks:
+            if task is not None:
+                task.cancel()
+        for task in tasks:
+            if task is None:
+                continue
             with suppress(asyncio.CancelledError):
                 await task
+        async with self._pending_lock:
+            for waiter in self._pending.values():
+                if not waiter.future.done():
+                    waiter.future.set_result(None)
 
     async def acquire(self, request_id: str) -> Permit | None:
         """入队并等待许可；超时返回 None，取消时必定清理队列。"""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self._max_wait_seconds
+        future: asyncio.Future[Permit | None] = loop.create_future()
         ttl_ms = int(self._max_wait_seconds * 1000) + self.ENTRY_TTL_BUFFER_MS
         entry_key = f"{self._entry_prefix}{request_id}"
         async with self._redis_gate:
@@ -97,30 +122,36 @@ class FairDistributedRateLimiter:
             score = await self._redis.incr(self._sequence_key)
             await self._redis.zadd(self._queue_key, {request_id: score})
             await self._redis.publish(self._notify_channel, "permit_changed")
+        async with self._pending_lock:
+            self._pending[request_id] = _Waiter(
+                score=int(score), deadline=deadline, future=future
+            )
+        self._dispatch_event.set()
+        granted: Permit | None = None
         try:
-            while True:
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    return None
-                permit = await self._try_claim(request_id)
-                if permit is not None:
-                    if loop.time() >= deadline:
-                        await self.release(permit)
-                        return None
-                    return permit
-                self._notify.clear()
-                with suppress(TimeoutError):
-                    await asyncio.wait_for(
-                        self._notify.wait(), min(remaining, self._poll_seconds)
-                    )
+            async with asyncio.timeout_at(deadline):
+                granted = await asyncio.shield(future)
+            return granted
+        except TimeoutError:
+            return None
         finally:
+            async with self._pending_lock:
+                self._pending.pop(request_id, None)
+                if not future.done():
+                    future.cancel()
+            orphaned: Permit | None = None
+            if granted is None and future.done() and not future.cancelled():
+                orphaned = future.result()
             await self._cleanup_waiter(request_id)
+            if orphaned is not None:
+                await self.release(orphaned)
 
     async def release(self, permit: Permit) -> bool:
         async with self._redis_gate:
             released = await self._semaphore.try_release(permit)
             if released:
                 await self._redis.publish(self._notify_channel, "permit_changed")
+                self._dispatch_event.set()
         return released
 
     async def _try_claim(self, request_id: str) -> Permit | None:
@@ -152,6 +183,56 @@ class FairDistributedRateLimiter:
             deleted = await self._redis.delete(f"{self._entry_prefix}{request_id}")
             if removed or deleted:
                 await self._redis.publish(self._notify_channel, "permit_changed")
+                self._dispatch_event.set()
+
+    async def _dispatch(self) -> None:
+        """每个实例仅由一个协程竞争全局队头，避免等待者轮询风暴。"""
+        while True:
+            try:
+                await asyncio.wait_for(
+                    self._dispatch_event.wait(), timeout=self._poll_seconds
+                )
+            except TimeoutError:
+                pass
+            self._dispatch_event.clear()
+            while await self._dispatch_once():
+                pass
+
+    async def _dispatch_once(self) -> bool:
+        loop = asyncio.get_running_loop()
+        async with self._pending_lock:
+            pending = [
+                (request_id, waiter)
+                for request_id, waiter in self._pending.items()
+                if not waiter.future.done()
+            ]
+            if not pending:
+                return False
+            request_id, waiter = min(pending, key=lambda item: item[1].score)
+            if loop.time() >= waiter.deadline:
+                waiter.future.set_result(None)
+                return True
+
+        permit = await self._try_claim(request_id)
+        if permit is None:
+            return False
+
+        release_orphan = False
+        async with self._pending_lock:
+            current = self._pending.get(request_id)
+            if (
+                current is not waiter
+                or waiter.future.done()
+                or loop.time() >= waiter.deadline
+            ):
+                release_orphan = True
+                if current is waiter and not waiter.future.done():
+                    waiter.future.set_result(None)
+            else:
+                waiter.future.set_result(permit)
+        if release_orphan:
+            await self.release(permit)
+        return True
 
     async def _subscribe(self) -> None:
         while True:
@@ -160,7 +241,7 @@ class FairDistributedRateLimiter:
                 await pubsub.subscribe(self._notify_channel, self._semaphore.channel)
                 async for message in pubsub.listen():
                     if message.get("type") == "message":
-                        self._notify.set()
+                        self._dispatch_event.set()
             except asyncio.CancelledError:
                 raise
             except Exception:

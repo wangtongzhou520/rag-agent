@@ -479,6 +479,48 @@ async def test_two_rate_limiter_instances_never_exceed_global_capacity(
             await redis_client.delete(*keys)
 
 
+async def test_rate_limiter_timeout_and_cancel_do_not_leak_permits(
+    redis_client: Redis,
+) -> None:
+    name = f"ragent:test:lifecycle:{uuid.uuid4()}"
+    limiter = FairDistributedRateLimiter(
+        redis_client,
+        name=name,
+        max_concurrent=1,
+        max_wait_seconds=0.08,
+        lease_seconds=5,
+        poll_interval_ms=10,
+    )
+    await limiter.start()
+    holder = await limiter.acquire("holder")
+    assert holder is not None
+    cancelled = asyncio.create_task(limiter.acquire("cancelled"))
+    try:
+        for _ in range(100):
+            if await redis_client.zcard(f"{name}:queue") == 1:
+                break
+            await asyncio.sleep(0.002)
+        else:
+            pytest.fail("cancelled waiter did not enter the distributed queue")
+
+        cancelled.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled
+        assert await redis_client.zcard(f"{name}:queue") == 0
+
+        assert await limiter.acquire("timed-out") is None
+        assert await redis_client.zcard(f"{name}:queue") == 0
+        assert await limiter.release(holder) is True
+        assert await redis_client.get(f"{name}:semaphore") == "1"
+        assert await redis_client.zcard(f"{name}:semaphore:permits") == 0
+    finally:
+        cancelled.cancel()
+        await limiter.close()
+        keys = [key async for key in redis_client.scan_iter(f"{name}*")]
+        if keys:
+            await redis_client.delete(*keys)
+
+
 async def test_pg_queue_multiple_workers_claim_each_task_once(
     integration_engine: AsyncEngine,
 ) -> None:
