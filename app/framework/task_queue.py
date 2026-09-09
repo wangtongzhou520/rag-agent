@@ -234,6 +234,52 @@ class TaskQueue:
             )
             return bool(result.rowcount)
 
+    async def defer(
+        self,
+        task_id: int,
+        owner: str,
+        error: str,
+        *,
+        delay_seconds: float = 2,
+        on_transition: FailureTransition | None = None,
+    ) -> bool:
+        """不增加 retry_count 地延迟归还，用于外部消费标记仍在处理中。"""
+        async with self._sessions.begin() as session:
+            task = await session.scalar(
+                select(AsyncTask)
+                .where(
+                    AsyncTask.id == task_id,
+                    AsyncTask.owner == owner,
+                    AsyncTask.status == "running",
+                )
+                .with_for_update()
+            )
+            if task is None:
+                return False
+            task.status = "pending"
+            task.owner = None
+            task.lease_until = None
+            task.next_retry_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(
+                seconds=max(0.1, delay_seconds)
+            )
+            task.error_message = error[:4000]
+            if on_transition is not None:
+                await on_transition(
+                    session,
+                    ClaimedTask(
+                        task.id,
+                        task.event_id,
+                        task.task_type,
+                        task.biz_key,
+                        task.payload or {},
+                        task.retry_count,
+                        task.max_retries,
+                    ),
+                    task.error_message,
+                    False,
+                )
+            return True
+
     async def recover_stuck(
         self, on_transition: FailureTransition | None = None
     ) -> list[tuple[ClaimedTask, bool]]:

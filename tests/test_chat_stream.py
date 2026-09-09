@@ -81,6 +81,23 @@ async def test_blank_question_returns_result_error(client: AsyncClient) -> None:
     }
 
 
+async def test_chat_rejects_when_current_user_already_has_active_stream(
+    client: AsyncClient,
+) -> None:
+    class BusySubmitLock:
+        async def try_lock(self, value: str) -> None:
+            return None
+
+    original = app.state.submit_lock_executor
+    app.state.submit_lock_executor = BusySubmitLock()
+    try:
+        response = await client.get("/rag/v3/chat", params={"question": "第二个问题"})
+    finally:
+        app.state.submit_lock_executor = original
+
+    assert response.json()["message"] == "当前会话处理中，请稍后再发起新的对话"
+
+
 async def test_stop_route_uses_current_user_and_is_idempotent(client: AsyncClient) -> None:
     class RecordingTaskManager:
         def __init__(self) -> None:

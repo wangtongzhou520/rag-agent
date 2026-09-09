@@ -147,6 +147,10 @@ rag:
     recovery_initial_delay_seconds: 30
     recovery_interval_seconds: 60
     poll_interval_seconds: 1
+  idempotency:
+    enabled: true
+    submit_ttl_seconds: 330
+    consume_ttl_seconds: 3600
   mcp:
     global_max_concurrency: 32
     servers:

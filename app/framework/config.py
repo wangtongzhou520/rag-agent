@@ -257,6 +257,12 @@ class TaskSettings(BaseModel):
     poll_interval_seconds: float = Field(default=1, gt=0)
 
 
+class IdempotencySettings(BaseModel):
+    enabled: bool = True
+    submit_ttl_seconds: float = Field(default=330, gt=0)
+    consume_ttl_seconds: float = Field(default=3600, gt=0)
+
+
 class McpServerSettings(BaseModel):
     name: str
     url: str
@@ -287,6 +293,7 @@ class RagSettings(BaseModel):
     memory: MemorySettings = MemorySettings()
     rate_limit: RateLimitSettings = RateLimitSettings()
     task: TaskSettings = TaskSettings()
+    idempotency: IdempotencySettings = IdempotencySettings()
     mcp: McpSettings = McpSettings()
 
 

@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 os.environ.setdefault("RAGENT_DATASOURCE__AUTO_DDL", "false")
 os.environ.setdefault("RAGENT_RAG__MCP__SERVERS", "[]")
 os.environ.setdefault("RAGENT_RAG__RATE_LIMIT__GLOBAL__ENABLED", "false")
+os.environ.setdefault("RAGENT_RAG__IDEMPOTENCY__ENABLED", "false")
 
 import pytest
 from asgi_lifespan import LifespanManager

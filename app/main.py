@@ -37,6 +37,7 @@ from app.core.parser.registry import build_default_registry
 from app.framework.config import Settings, get_settings
 from app.framework.db import init_schema
 from app.framework.exceptions import BizException
+from app.framework.idempotency import SubmitLockExecutor
 from app.framework.ids import new_uuid7
 from app.framework.logging import get_logger, init_logging
 from app.framework.result import ErrorCode, Results
@@ -108,6 +109,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings: Settings = get_settings()
     init_logging(settings.logging.level)
+    if (
+        settings.rag.idempotency.enabled
+        and settings.rag.idempotency.submit_ttl_seconds
+        <= settings.rag.default.sse_timeout_ms / 1000
+    ):
+        raise ValueError(
+            "rag.idempotency.submit_ttl_seconds must exceed the SSE timeout"
+        )
 
     # 基础设施资源：只创建与关闭，连通性自检随各里程碑补
     engine: AsyncEngine = create_async_engine(settings.datasource.url, pool_pre_ping=True)
@@ -122,6 +131,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         decode_responses=True,
     )
     http_client = httpx.AsyncClient()
+    idempotency_settings = settings.rag.idempotency
+    submit_lock_executor = (
+        SubmitLockExecutor(
+            redis_client,
+            settings.redis.key_prefix,
+            ttl_seconds=idempotency_settings.submit_ttl_seconds,
+        )
+        if idempotency_settings.enabled
+        else None
+    )
 
     prompt_cache = AgentPromptCache(redis_client, settings.redis.key_prefix)
     prompt_resolver = AgentPromptResolver(engine, prompt_cache)
@@ -253,6 +272,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.engine = engine
     app.state.redis = redis_client
+    app.state.submit_lock_executor = submit_lock_executor
     app.state.http = http_client
     app.state.model_runtime = model_runtime
     app.state.runtime_settings_service = runtime_settings_service

@@ -34,6 +34,11 @@ from app.framework.chat_types import ChatRole
 from app.framework.config import AuthSettings, DatasourceSettings, get_settings
 from app.framework.db import init_schema
 from app.framework.exceptions import BizException
+from app.framework.idempotency import (
+    ConsumeMarkExecutor,
+    ConsumeState,
+    SubmitLockExecutor,
+)
 from app.framework.result import ErrorCode, Results
 from app.framework.sse import RecommendedQuestionsPayload, RecommendedQuestionStatus
 from app.framework.stream_tasks import RedisStreamTaskManager
@@ -87,6 +92,7 @@ from app.system.auth.service import AuthService
 from app.system.user.models import User
 from app.system.user.router import router as user_router
 from app.system.user.service import UserService
+from app.worker import WorkerTaskHandler
 
 pytestmark = pytest.mark.integration
 
@@ -214,6 +220,127 @@ async def test_redis_stream_cancel_broadcasts_between_instances(
             f"{prefix}stream:owner:task-remote",
             f"{prefix}stream:cancel:task-remote",
         )
+
+
+async def test_redis_idempotency_is_shared_across_instances(
+    redis_client: Redis,
+) -> None:
+    prefix = f"ragent:test:idempotency:{uuid.uuid4()}:"
+    first_submit = SubmitLockExecutor(redis_client, prefix, ttl_seconds=10)
+    second_submit = SubmitLockExecutor(redis_client, prefix, ttl_seconds=10)
+    first_consume = ConsumeMarkExecutor(redis_client, prefix, ttl_seconds=10)
+    second_consume = ConsumeMarkExecutor(redis_client, prefix, ttl_seconds=10)
+    try:
+        token = await first_submit.try_lock("user-7")
+        assert token is not None
+        assert await second_submit.try_lock("user-7") is None
+        assert await second_submit.unlock("user-7", "stale-token") is False
+        assert await first_submit.unlock("user-7", token) is True
+
+        states = await asyncio.gather(
+            *(first_consume.try_begin("event-1") for _ in range(50))
+        )
+        assert states.count(ConsumeState.FIRST_RUN) == 1
+        assert states.count(ConsumeState.CONSUMING) == 49
+        await first_consume.mark_consumed("event-1")
+        assert await second_consume.try_begin("event-1") is ConsumeState.CONSUMED
+        assert await second_consume.rollback("event-1") is False
+        assert await first_consume.try_begin("event-2") is ConsumeState.FIRST_RUN
+        assert await first_consume.rollback("event-2") is True
+        assert await second_consume.try_begin("event-2") is ConsumeState.FIRST_RUN
+    finally:
+        keys = [key async for key in redis_client.scan_iter(f"{prefix}*")]
+        if keys:
+            await redis_client.delete(*keys)
+
+
+async def test_consumed_marker_closes_worker_crash_window(
+    integration_engine: AsyncEngine,
+    redis_client: Redis,
+) -> None:
+    prefix = f"ragent:test:consume-crash:{uuid.uuid4()}:"
+    sessions = async_sessionmaker(integration_engine, expire_on_commit=False)
+    async with sessions.begin() as session:
+        task_row = await TaskQueue.enqueue(
+            session,
+            "idempotency-probe",
+            "probe:crash-window",
+            {},
+        )
+        task_id = task_row.id
+
+    class CountingKnowledgeHandler:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def handle(self, task) -> None:
+            self.calls += 1
+
+    knowledge = CountingKnowledgeHandler()
+    first_handler = WorkerTaskHandler(
+        knowledge,  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        ConsumeMarkExecutor(redis_client, prefix, ttl_seconds=10),
+    )
+    second_handler = WorkerTaskHandler(
+        knowledge,  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        ConsumeMarkExecutor(redis_client, prefix, ttl_seconds=10),
+    )
+    queue = TaskQueue(integration_engine)
+    try:
+        first_claim = await queue.claim("worker-before-crash")
+        assert first_claim is not None and first_claim.id == task_id
+        await first_handler.handle(first_claim)
+        assert knowledge.calls == 1
+
+        # 领域副作用和 CONSUMED 已提交，但 queue.succeed 前进程退出。
+        async with sessions.begin() as session:
+            await session.execute(
+                update(AsyncTask)
+                .where(AsyncTask.id == task_id)
+                .values(
+                    lease_until=datetime.now(UTC).replace(tzinfo=None)
+                    - timedelta(seconds=1)
+                )
+            )
+        recovered = await queue.recover_stuck()
+        assert len(recovered) == 1
+        replacement = await queue.claim("worker-after-crash")
+        assert replacement is not None and replacement.id == task_id
+
+        await second_handler.handle(replacement)
+        assert knowledge.calls == 1
+        assert await queue.succeed(
+            replacement.id,
+            "worker-after-crash",
+            replacement.event_id,
+        )
+
+        async with sessions.begin() as session:
+            deferred_row = await TaskQueue.enqueue(
+                session,
+                "idempotency-probe",
+                "probe:consuming",
+                {},
+            )
+            deferred_id = deferred_row.id
+        deferred = await queue.claim("worker-conflict")
+        assert deferred is not None and deferred.id == deferred_id
+        assert await queue.defer(
+            deferred.id,
+            "worker-conflict",
+            "任务正在被其他实例消费",
+        )
+        async with sessions() as session:
+            deferred_state = await session.get(AsyncTask, deferred_id)
+        assert deferred_state is not None and deferred_state.status == "pending"
+        assert deferred_state.retry_count == 0
+        assert deferred_state.next_retry_at is not None
+    finally:
+        keys = [key async for key in redis_client.scan_iter(f"{prefix}*")]
+        if keys:
+            await redis_client.delete(*keys)
 
 
 async def test_redis_expirable_semaphore_recovers_and_releases_idempotently(

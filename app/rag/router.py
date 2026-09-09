@@ -9,7 +9,9 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.framework.exceptions import ClientException
+from app.framework.idempotency import SubmitLockExecutor
 from app.framework.ids import new_uuid7
+from app.framework.logging import get_logger
 from app.framework.result import Results
 from app.framework.sse import SseSender
 from app.framework.stream_tasks import StreamTaskManager
@@ -21,6 +23,7 @@ from app.rag.service import RAGChatService
 from app.system.auth.deps import require_user
 from app.system.auth.models import LoginUser
 
+logger = get_logger(__name__)
 router = APIRouter(prefix="/rag/v3", tags=["rag"])
 conversation_router = APIRouter(
     prefix="/conversations",
@@ -146,6 +149,16 @@ async def stream_chat(
     if not normalized_question:
         raise ClientException("问题不能为空")
 
+    submit_lock: SubmitLockExecutor | None = getattr(
+        request.app.state, "submit_lock_executor", None
+    )
+    lock_value = str(user.user_id)
+    lock_token = (
+        await submit_lock.try_lock(lock_value) if submit_lock is not None else None
+    )
+    if submit_lock is not None and lock_token is None:
+        raise ClientException("当前会话处理中，请稍后再发起新的对话")
+
     sender = SseSender()
     service: RAGChatService = request.app.state.rag_chat_service
     task_id = new_uuid7()
@@ -154,18 +167,28 @@ async def stream_chat(
             code.strip() for code in (intent_codes or "").split(",") if code.strip()
         )
     )
-    producer = asyncio.create_task(
-        service.stream_chat(
-            question=normalized_question,
-            conversation_id=conversation_id,
-            deep_thinking=deep_thinking,
-            user_id=user.user_id,
-            sender=sender,
-            task_id=task_id,
-            selected_intent_codes=selected_intent_codes,
-        ),
-        name=f"stream-chat:{task_id}",
-    )
+    async def produce() -> None:
+        try:
+            await service.stream_chat(
+                question=normalized_question,
+                conversation_id=conversation_id,
+                deep_thinking=deep_thinking,
+                user_id=user.user_id,
+                sender=sender,
+                task_id=task_id,
+                selected_intent_codes=selected_intent_codes,
+            )
+        finally:
+            if submit_lock is not None and lock_token is not None:
+                try:
+                    await submit_lock.unlock(lock_value, lock_token)
+                except Exception:
+                    logger.exception(
+                        "chat idempotency lock release failed",
+                        user_id=user.user_id,
+                    )
+
+    producer = asyncio.create_task(produce(), name=f"stream-chat:{task_id}")
 
     async def body() -> AsyncIterator[str]:
         try:

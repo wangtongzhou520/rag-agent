@@ -7,6 +7,7 @@ import socket
 from contextlib import suppress
 
 import asyncpg
+import redis.asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.chunk.service import ChunkingService
@@ -16,6 +17,11 @@ from app.core.parser.detector import MimeTypeDetector
 from app.core.parser.registry import build_default_registry
 from app.framework.config import DatasourceSettings, get_settings
 from app.framework.db import init_schema
+from app.framework.idempotency import (
+    ConsumeInProgressError,
+    ConsumeMarkExecutor,
+    ConsumeState,
+)
 from app.framework.logging import get_logger, init_logging
 from app.framework.task_queue import ClaimedTask, TaskQueue
 from app.knowledge.tasks import KnowledgeTaskHandler
@@ -34,15 +40,57 @@ class WorkerTaskHandler:
         self,
         knowledge: KnowledgeTaskHandler,
         feedback: MessageFeedbackTaskHandler,
+        consume_marks: ConsumeMarkExecutor | None = None,
     ) -> None:
         self._knowledge = knowledge
         self._feedback = feedback
+        self._consume_marks = consume_marks
 
     async def handle(self, task: ClaimedTask) -> None:
-        if task.task_type == FEEDBACK_TASK_TYPE:
-            await self._feedback.handle(task)
-            return
-        await self._knowledge.handle(task)
+        key = str(task.event_id)
+        owns_mark = False
+        if self._consume_marks is not None:
+            try:
+                state = await self._consume_marks.try_begin(key)
+            except Exception:
+                logger.exception(
+                    "consume idempotency unavailable; using PostgreSQL guards",
+                    task_id=task.id,
+                )
+            else:
+                if state is ConsumeState.CONSUMED:
+                    logger.info("consumed task skipped", task_id=task.id)
+                    return
+                if state is ConsumeState.CONSUMING:
+                    raise ConsumeInProgressError("任务正在被其他实例消费")
+                owns_mark = True
+        try:
+            if task.task_type == FEEDBACK_TASK_TYPE:
+                await self._feedback.handle(task)
+            else:
+                await self._knowledge.handle(task)
+        except BaseException:
+            if owns_mark and self._consume_marks is not None:
+                try:
+                    await self._consume_marks.rollback(key)
+                except Exception:
+                    logger.exception(
+                        "consume idempotency rollback failed", task_id=task.id
+                    )
+            raise
+        if owns_mark and self._consume_marks is not None:
+            try:
+                marked = await self._consume_marks.mark_consumed(key)
+                if not marked:
+                    logger.warning(
+                        "consume idempotency ownership lost before completion",
+                        task_id=task.id,
+                    )
+            except Exception:
+                logger.exception(
+                    "consume idempotency completion failed; PostgreSQL remains authoritative",
+                    task_id=task.id,
+                )
 
     async def mark_claimed(
         self, session: AsyncSession, task: ClaimedTask
@@ -181,6 +229,14 @@ async def _process(
                 task_id=task.id,
                 task_type=task.task_type,
             )
+    except ConsumeInProgressError as exc:
+        logger.info("task consumption deferred", task_id=task.id)
+        await queue.defer(
+            task.id,
+            owner,
+            str(exc),
+            on_transition=handler.mark_retry_or_failed_in_session,
+        )
     except Exception as exc:
         logger.exception(
             "task failed", task_id=task.id, task_type=task.task_type
@@ -209,10 +265,25 @@ async def run() -> None:
     task_settings = settings.rag.task
     if task_settings.heartbeat_seconds >= task_settings.lease_seconds:
         raise ValueError("rag.task.heartbeat_seconds must be less than lease_seconds")
+    if (
+        settings.rag.idempotency.enabled
+        and settings.rag.idempotency.consume_ttl_seconds
+        <= task_settings.lease_seconds + task_settings.recovery_interval_seconds
+    ):
+        raise ValueError(
+            "rag.idempotency.consume_ttl_seconds must exceed lease plus recovery interval"
+        )
     engine = create_async_engine(settings.datasource.url, pool_pre_ping=True)
     if settings.datasource.auto_ddl:
         await init_schema(engine)
     runtime = build_model_runtime(settings)
+    redis_client = aioredis.Redis(
+        host=settings.redis.host,
+        port=settings.redis.port,
+        db=settings.redis.database,
+        password=settings.redis.password or None,
+        decode_responses=True,
+    )
     kernel = DefaultIngestionKernel(
         MimeTypeDetector(),
         build_default_registry(),
@@ -224,6 +295,18 @@ async def run() -> None:
     handler = WorkerTaskHandler(
         KnowledgeTaskHandler(engine, kernel),
         MessageFeedbackTaskHandler(engine),
+        ConsumeMarkExecutor(
+            redis_client,
+            settings.redis.key_prefix,
+            ttl_seconds=settings.rag.idempotency.consume_ttl_seconds,
+            consuming_ttl_seconds=(
+                task_settings.lease_seconds
+                + task_settings.recovery_interval_seconds
+                + 30
+            ),
+        )
+        if settings.rag.idempotency.enabled
+        else None,
     )
     owner = f"{socket.gethostname()}:{os.getpid()}"
 
@@ -287,6 +370,7 @@ async def run() -> None:
         with suppress(asyncio.CancelledError):
             await listener
         await runtime.http.aclose()
+        await redis_client.aclose()
         await engine.dispose()
         logger.info("worker stopped", owner=owner)
 
