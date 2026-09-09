@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.ingest.kernel import DefaultIngestionKernel
 from app.core.ingest.models import DocumentRef, IngestionSpec, VectorTarget
@@ -25,6 +25,23 @@ class KnowledgeTaskHandler:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._kernel = kernel
 
+    async def mark_claimed(
+        self, session: AsyncSession, task: ClaimedTask
+    ) -> None:
+        """在队列 claim 的同一事务中推进文档与分块日志。"""
+        if task.task_type != "chunk-document":
+            return
+        document = await session.get(KnowledgeDocument, int(task.payload["docId"]))
+        log = await session.get(
+            KnowledgeDocumentChunkLog, int(task.payload["logId"])
+        )
+        if document is not None:
+            document.status = "running"
+        if log is not None:
+            log.status = "running"
+            log.start_time = _now()
+            log.end_time = None
+
     async def handle(self, task: ClaimedTask) -> None:
         handlers = {
             "chunk-document": self._chunk_document,
@@ -39,22 +56,33 @@ class KnowledgeTaskHandler:
     async def mark_retry_or_failed(
         self, task: ClaimedTask, error: str, terminal: bool
     ) -> None:
+        """兼容独立调用；Worker 使用同事务版本。"""
+        async with self._sessions.begin() as session:
+            await self.mark_retry_or_failed_in_session(
+                session, task, error, terminal
+            )
+
+    async def mark_retry_or_failed_in_session(
+        self,
+        session: AsyncSession,
+        task: ClaimedTask,
+        error: str,
+        terminal: bool,
+    ) -> None:
         if task.task_type != "chunk-document":
             return
         doc_id = int(task.payload["docId"])
         log_id = int(task.payload["logId"])
-        async with self._sessions.begin() as session:
-            document = await session.get(KnowledgeDocument, doc_id)
-            log = await session.get(KnowledgeDocumentChunkLog, log_id)
-            # 队列等待下一次重试不代表用户尚未开始分块；文档仍属于处理中。
-            status = "failed" if terminal else "running"
-            if document is not None:
-                document.status = status
-            if log is not None:
-                log.status = status
-                log.error_message = error[:4000]
-                if terminal:
-                    log.end_time = _now()
+        document = await session.get(KnowledgeDocument, doc_id)
+        log = await session.get(KnowledgeDocumentChunkLog, log_id)
+        status = "failed" if terminal else "pending"
+        if document is not None:
+            document.status = status
+        if log is not None:
+            log.status = status
+            log.error_message = error[:4000]
+            if terminal:
+                log.end_time = _now()
 
     async def _chunk_document(self, payload: dict) -> None:
         doc_id = int(payload["docId"])

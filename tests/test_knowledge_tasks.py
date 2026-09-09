@@ -30,7 +30,7 @@ class FakeSession:
         return None
 
 
-async def test_chunk_retry_stays_running_until_terminal_failure() -> None:
+async def test_chunk_retry_returns_to_pending_until_terminal_failure() -> None:
     session = FakeSession()
     handler = object.__new__(KnowledgeTaskHandler)
     handler._sessions = session
@@ -46,8 +46,8 @@ async def test_chunk_retry_stays_running_until_terminal_failure() -> None:
 
     await handler.mark_retry_or_failed(task, "temporary error", terminal=False)
 
-    assert session.document.status == "running"
-    assert session.log.status == "running"
+    assert session.document.status == "pending"
+    assert session.log.status == "pending"
     assert session.log.error_message == "temporary error"
     assert session.log.end_time is None
 

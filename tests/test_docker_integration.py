@@ -17,7 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from redis.asyncio import Redis
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.admin.agents.schemas import AgentProfileWrite
@@ -350,6 +350,146 @@ async def test_two_rate_limiter_instances_never_exceed_global_capacity(
         keys = [key async for key in redis_client.scan_iter(f"{name}*")]
         if keys:
             await redis_client.delete(*keys)
+
+
+async def test_pg_queue_multiple_workers_claim_each_task_once(
+    integration_engine: AsyncEngine,
+) -> None:
+    sessions = async_sessionmaker(integration_engine, expire_on_commit=False)
+    async with sessions.begin() as session:
+        for index in range(60):
+            await TaskQueue.enqueue(
+                session,
+                "capacity-probe",
+                f"probe:{index}",
+                {"index": index},
+            )
+
+    queues = [TaskQueue(integration_engine) for _ in range(8)]
+
+    async def drain(worker_index: int) -> list[int]:
+        claimed_ids: list[int] = []
+        while task := await queues[worker_index].claim(f"worker-{worker_index}"):
+            claimed_ids.append(task.id)
+            await asyncio.sleep(0)
+        return claimed_ids
+
+    claimed_by_worker = await asyncio.gather(*(drain(index) for index in range(8)))
+    claimed_ids = [task_id for group in claimed_by_worker for task_id in group]
+
+    assert len(claimed_ids) == 60
+    assert len(set(claimed_ids)) == 60
+    assert sum(bool(group) for group in claimed_by_worker) > 1
+    async with sessions() as session:
+        owners = (
+            await session.scalars(
+                select(AsyncTask.owner).where(AsyncTask.status == "running")
+            )
+        ).all()
+    assert len(owners) == 60
+    assert len(set(owners)) > 1
+
+
+async def test_pg_queue_recovery_updates_task_document_and_log_atomically(
+    integration_engine: AsyncEngine,
+) -> None:
+    sessions = async_sessionmaker(integration_engine, expire_on_commit=False)
+    async with sessions.begin() as session:
+        kb = KnowledgeBase(
+            name="recovery-test",
+            embedding_model="deterministic-embedding",
+            collection_name=f"recovery_{uuid.uuid4().hex}",
+            created_by=0,
+        )
+        session.add(kb)
+        await session.flush()
+        document = KnowledgeDocument(
+            kb_id=kb.id,
+            doc_name="recover.md",
+            file_type="md",
+            source_type="file",
+            status="pending",
+            created_by=0,
+        )
+        session.add(document)
+        await session.flush()
+        log = KnowledgeDocumentChunkLog(doc_id=document.id, status="pending")
+        session.add(log)
+        await session.flush()
+        task = await TaskQueue.enqueue(
+            session,
+            "chunk-document",
+            f"doc:{document.id}",
+            {"docId": document.id, "logId": log.id},
+            max_retries=1,
+        )
+        task_id, doc_id, log_id = task.id, document.id, log.id
+
+    handler = KnowledgeTaskHandler(integration_engine, object())  # type: ignore[arg-type]
+    first_queue = TaskQueue(integration_engine)
+    second_queue = TaskQueue(integration_engine)
+
+    async def failing_claim_transition(session, claimed) -> None:
+        await handler.mark_claimed(session, claimed)
+        raise RuntimeError("simulated crash before claim commit")
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        await first_queue.claim("failed-owner", failing_claim_transition)
+    async with sessions() as session:
+        rolled_back_task = await session.get(AsyncTask, task_id)
+        rolled_back_document = await session.get(KnowledgeDocument, doc_id)
+        rolled_back_log = await session.get(KnowledgeDocumentChunkLog, log_id)
+    assert rolled_back_task is not None and rolled_back_task.status == "pending"
+    assert rolled_back_document is not None and rolled_back_document.status == "pending"
+    assert rolled_back_log is not None and rolled_back_log.status == "pending"
+
+    claimed = await first_queue.claim("dead-worker", handler.mark_claimed)
+    assert claimed is not None and claimed.id == task_id
+    async with sessions.begin() as session:
+        await session.execute(
+            update(AsyncTask)
+            .where(AsyncTask.id == task_id)
+            .values(lease_until=datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1))
+        )
+
+    recovered = await asyncio.gather(
+        first_queue.recover_stuck(handler.mark_retry_or_failed_in_session),
+        second_queue.recover_stuck(handler.mark_retry_or_failed_in_session),
+    )
+    assert sum(len(group) for group in recovered) == 1
+    assert [terminal for group in recovered for _, terminal in group] == [False]
+    async with sessions() as session:
+        pending_task = await session.get(AsyncTask, task_id)
+        pending_document = await session.get(KnowledgeDocument, doc_id)
+        pending_log = await session.get(KnowledgeDocumentChunkLog, log_id)
+    assert pending_task is not None and pending_task.status == "pending"
+    assert pending_task.retry_count == 1 and pending_task.owner is None
+    assert pending_document is not None and pending_document.status == "pending"
+    assert pending_log is not None and pending_log.status == "pending"
+
+    reclaimed = await second_queue.claim("replacement-worker", handler.mark_claimed)
+    assert reclaimed is not None and reclaimed.id == task_id
+    async with sessions.begin() as session:
+        await session.execute(
+            update(AsyncTask)
+            .where(AsyncTask.id == task_id)
+            .values(lease_until=datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1))
+        )
+    terminal_recovery = await asyncio.gather(
+        first_queue.recover_stuck(handler.mark_retry_or_failed_in_session),
+        second_queue.recover_stuck(handler.mark_retry_or_failed_in_session),
+    )
+    assert sum(len(group) for group in terminal_recovery) == 1
+    assert [terminal for group in terminal_recovery for _, terminal in group] == [True]
+    async with sessions() as session:
+        failed_task = await session.get(AsyncTask, task_id)
+        failed_document = await session.get(KnowledgeDocument, doc_id)
+        failed_log = await session.get(KnowledgeDocumentChunkLog, log_id)
+    assert failed_task is not None and failed_task.status == "failed"
+    assert failed_task.retry_count == 2 and failed_task.owner is None
+    assert failed_document is not None and failed_document.status == "failed"
+    assert failed_log is not None and failed_log.status == "failed"
+    assert failed_log.end_time is not None
 
 
 def _pdf_bytes() -> bytes:

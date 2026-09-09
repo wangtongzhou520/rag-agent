@@ -1,6 +1,7 @@
 """PG 任务队列的入队、领取、确认、重试和卡死恢复。"""
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -21,6 +22,12 @@ class ClaimedTask:
     payload: dict
     retry_count: int
     max_retries: int
+
+
+ClaimTransition = Callable[[AsyncSession, ClaimedTask], Awaitable[None]]
+FailureTransition = Callable[
+    [AsyncSession, ClaimedTask, str, bool], Awaitable[None]
+]
 
 
 class TaskQueue:
@@ -92,7 +99,9 @@ class TaskQueue:
         )
         return event_id
 
-    async def claim(self, owner: str) -> ClaimedTask | None:
+    async def claim(
+        self, owner: str, on_claimed: ClaimTransition | None = None
+    ) -> ClaimedTask | None:
         now = datetime.now(UTC).replace(tzinfo=None)
         async with self._sessions.begin() as session:
             task = await session.scalar(
@@ -113,7 +122,7 @@ class TaskQueue:
             task.status = "running"
             task.owner = owner
             task.lease_until = now + timedelta(seconds=self._lease_seconds)
-            return ClaimedTask(
+            claimed = ClaimedTask(
                 task.id,
                 task.event_id,
                 task.task_type,
@@ -122,6 +131,9 @@ class TaskQueue:
                 task.retry_count,
                 task.max_retries,
             )
+            if on_claimed is not None:
+                await on_claimed(session, claimed)
+            return claimed
 
     async def succeed(
         self, task_id: int, owner: str, event_id: uuid.UUID | None = None
@@ -155,6 +167,7 @@ class TaskQueue:
         owner: str,
         error: str,
         event_id: uuid.UUID | None = None,
+        on_transition: FailureTransition | None = None,
     ) -> bool:
         async with self._sessions.begin() as session:
             task = await session.scalar(
@@ -180,14 +193,30 @@ class TaskQueue:
             if task.retry_count > task.max_retries:
                 task.status = "failed"
                 task.next_retry_at = None
-                return True
+                terminal = True
             else:
                 task.status = "pending"
                 delay = min(300, 2 ** min(task.retry_count, 8))
                 task.next_retry_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(
                     seconds=delay
                 )
-                return False
+                terminal = False
+            if on_transition is not None:
+                await on_transition(
+                    session,
+                    ClaimedTask(
+                        task.id,
+                        task.event_id,
+                        task.task_type,
+                        task.biz_key,
+                        task.payload or {},
+                        task.retry_count,
+                        task.max_retries,
+                    ),
+                    task.error_message,
+                    terminal,
+                )
+            return terminal
 
     async def renew(self, task_id: int, owner: str) -> bool:
         lease_until = datetime.now(UTC).replace(tzinfo=None) + timedelta(
@@ -205,7 +234,9 @@ class TaskQueue:
             )
             return bool(result.rowcount)
 
-    async def recover_stuck(self) -> list[tuple[ClaimedTask, bool]]:
+    async def recover_stuck(
+        self, on_transition: FailureTransition | None = None
+    ) -> list[tuple[ClaimedTask, bool]]:
         now = datetime.now(UTC).replace(tzinfo=None)
         async with self._sessions.begin() as session:
             tasks = (
@@ -236,5 +267,9 @@ class TaskQueue:
                 task.lease_until = None
                 task.next_retry_at = None if terminal else now
                 task.error_message = "任务租约超时"
+                if on_transition is not None:
+                    await on_transition(
+                        session, snapshot, task.error_message, terminal
+                    )
                 recovered.append((snapshot, terminal))
             return recovered

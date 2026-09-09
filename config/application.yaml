@@ -141,6 +141,12 @@ rag:
       max_wait_seconds: 20
       lease_seconds: 600
       poll_interval_ms: 200
+  task:
+    lease_seconds: 300
+    heartbeat_seconds: 60
+    recovery_initial_delay_seconds: 30
+    recovery_interval_seconds: 60
+    poll_interval_seconds: 1
   mcp:
     global_max_concurrency: 32
     servers:

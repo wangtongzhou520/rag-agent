@@ -249,6 +249,14 @@ class RateLimitSettings(BaseModel):
     )
 
 
+class TaskSettings(BaseModel):
+    lease_seconds: float = Field(default=300, ge=30)
+    heartbeat_seconds: float = Field(default=60, gt=0)
+    recovery_initial_delay_seconds: float = Field(default=30, ge=0)
+    recovery_interval_seconds: float = Field(default=60, gt=0)
+    poll_interval_seconds: float = Field(default=1, gt=0)
+
+
 class McpServerSettings(BaseModel):
     name: str
     url: str
@@ -278,6 +286,7 @@ class RagSettings(BaseModel):
     engine: EngineSettings = EngineSettings()
     memory: MemorySettings = MemorySettings()
     rate_limit: RateLimitSettings = RateLimitSettings()
+    task: TaskSettings = TaskSettings()
     mcp: McpSettings = McpSettings()
 
 

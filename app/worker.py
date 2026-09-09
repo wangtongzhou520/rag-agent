@@ -7,7 +7,7 @@ import socket
 from contextlib import suppress
 
 import asyncpg
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.chunk.service import ChunkingService
 from app.core.ingest.kernel import ChunkEmbeddingService, DefaultIngestionKernel
@@ -24,8 +24,6 @@ from app.rag.feedback import FEEDBACK_TASK_TYPE, MessageFeedbackTaskHandler
 
 logger = get_logger(__name__)
 
-POLL_SECONDS = 1.0
-RECOVER_SECONDS = 60.0
 RENEW_SECONDS = 60.0
 
 
@@ -46,11 +44,21 @@ class WorkerTaskHandler:
             return
         await self._knowledge.handle(task)
 
-    async def mark_retry_or_failed(
-        self, task: ClaimedTask, error: str, terminal: bool
+    async def mark_claimed(
+        self, session: AsyncSession, task: ClaimedTask
     ) -> None:
-        await self._knowledge.mark_retry_or_failed(task, error, terminal)
+        await self._knowledge.mark_claimed(session, task)
 
+    async def mark_retry_or_failed_in_session(
+        self,
+        session: AsyncSession,
+        task: ClaimedTask,
+        error: str,
+        terminal: bool,
+    ) -> None:
+        await self._knowledge.mark_retry_or_failed_in_session(
+            session, task, error, terminal
+        )
 
 async def _listen_notifications(
     datasource: DatasourceSettings,
@@ -90,15 +98,34 @@ async def _listen_notifications(
 
 
 async def _renew_loop(
-    queue: TaskQueue, task: ClaimedTask, owner: str, stopped: asyncio.Event
+    queue: TaskQueue,
+    task: ClaimedTask,
+    owner: str,
+    stopped: asyncio.Event,
+    lease_lost: asyncio.Event,
+    *,
+    renew_seconds: float = RENEW_SECONDS,
+    lease_seconds: float = 300,
 ) -> None:
+    loop = asyncio.get_running_loop()
+    last_success = loop.time()
     while not stopped.is_set():
         try:
-            await asyncio.wait_for(stopped.wait(), timeout=RENEW_SECONDS)
+            await asyncio.wait_for(stopped.wait(), timeout=renew_seconds)
         except TimeoutError:
-            if not await queue.renew(task.id, owner):
+            try:
+                renewed = await queue.renew(task.id, owner)
+            except Exception:
+                logger.exception("task lease renewal failed", task_id=task.id)
+                if loop.time() - last_success >= lease_seconds:
+                    lease_lost.set()
+                    return
+                continue
+            if not renewed:
                 logger.warning("task lease lost", task_id=task.id)
+                lease_lost.set()
                 return
+            last_success = loop.time()
 
 
 async def _process(
@@ -106,14 +133,45 @@ async def _process(
     handler: WorkerTaskHandler,
     task: ClaimedTask,
     owner: str,
+    *,
+    renew_seconds: float = RENEW_SECONDS,
+    lease_seconds: float = 300,
 ) -> None:
     renew_stopped = asyncio.Event()
+    lease_lost = asyncio.Event()
     renew_task = asyncio.create_task(
-        _renew_loop(queue, task, owner, renew_stopped),
+        _renew_loop(
+            queue,
+            task,
+            owner,
+            renew_stopped,
+            lease_lost,
+            renew_seconds=renew_seconds,
+            lease_seconds=lease_seconds,
+        ),
         name=f"task-renew:{task.id}",
     )
+    handler_task = asyncio.create_task(
+        handler.handle(task), name=f"task-handler:{task.id}"
+    )
+    lease_waiter = asyncio.create_task(
+        lease_lost.wait(), name=f"task-lease-lost:{task.id}"
+    )
     try:
-        await handler.handle(task)
+        done, _ = await asyncio.wait(
+            (handler_task, lease_waiter), return_when=asyncio.FIRST_COMPLETED
+        )
+        if handler_task not in done:
+            handler_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await handler_task
+            logger.error(
+                "task execution cancelled after lease loss",
+                task_id=task.id,
+                owner=owner,
+            )
+            return
+        await handler_task
         completed = await queue.succeed(task.id, owner, task.event_id)
         if completed:
             logger.info("task succeeded", task_id=task.id, task_type=task.task_type)
@@ -127,18 +185,30 @@ async def _process(
         logger.exception(
             "task failed", task_id=task.id, task_type=task.task_type
         )
-        terminal = await queue.fail(task.id, owner, str(exc), task.event_id)
-        await handler.mark_retry_or_failed(task, str(exc), terminal)
+        await queue.fail(
+            task.id,
+            owner,
+            str(exc),
+            task.event_id,
+            handler.mark_retry_or_failed_in_session,
+        )
     finally:
         renew_stopped.set()
+        lease_waiter.cancel()
+        if not handler_task.done():
+            handler_task.cancel()
         renew_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await renew_task
+        await asyncio.gather(
+            lease_waiter, handler_task, renew_task, return_exceptions=True
+        )
 
 
 async def run() -> None:
     settings = get_settings()
     init_logging(settings.logging.level)
+    task_settings = settings.rag.task
+    if task_settings.heartbeat_seconds >= task_settings.lease_seconds:
+        raise ValueError("rag.task.heartbeat_seconds must be less than lease_seconds")
     engine = create_async_engine(settings.datasource.url, pool_pre_ping=True)
     if settings.datasource.auto_ddl:
         await init_schema(engine)
@@ -150,7 +220,7 @@ async def run() -> None:
         ChunkEmbeddingService(runtime.embedding),
         PgChunkIndexWriter(engine),
     )
-    queue = TaskQueue(engine)
+    queue = TaskQueue(engine, lease_seconds=int(task_settings.lease_seconds))
     handler = WorkerTaskHandler(
         KnowledgeTaskHandler(engine, kernel),
         MessageFeedbackTaskHandler(engine),
@@ -171,26 +241,30 @@ async def run() -> None:
         _listen_notifications(settings.datasource, wakeup, stop_event),
         name="task-listener",
     )
-    last_recover = loop.time()
+    last_recover = loop.time() - (
+        task_settings.recovery_interval_seconds
+        - task_settings.recovery_initial_delay_seconds
+    )
     try:
         while not stop_event.is_set():
-            if loop.time() - last_recover >= RECOVER_SECONDS:
-                recovered = await queue.recover_stuck()
+            if (
+                loop.time() - last_recover
+                >= task_settings.recovery_interval_seconds
+            ):
+                recovered = await queue.recover_stuck(
+                    handler.mark_retry_or_failed_in_session
+                )
                 if recovered:
-                    for recovered_task, terminal in recovered:
-                        await handler.mark_retry_or_failed(
-                            recovered_task, "任务租约超时", terminal
-                        )
                     logger.warning("recovered stuck tasks", count=len(recovered))
                 last_recover = loop.time()
-            task = await queue.claim(owner)
+            task = await queue.claim(owner, handler.mark_claimed)
             if task is None:
                 wakeup.clear()
                 stop_waiter = asyncio.create_task(stop_event.wait())
                 notify_waiter = asyncio.create_task(wakeup.wait())
                 done, pending = await asyncio.wait(
                     (stop_waiter, notify_waiter),
-                    timeout=POLL_SECONDS,
+                    timeout=task_settings.poll_interval_seconds,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 for waiter in pending:
@@ -199,7 +273,14 @@ async def run() -> None:
                 for waiter in done:
                     await waiter
             else:
-                await _process(queue, handler, task, owner)
+                await _process(
+                    queue,
+                    handler,
+                    task,
+                    owner,
+                    renew_seconds=task_settings.heartbeat_seconds,
+                    lease_seconds=task_settings.lease_seconds,
+                )
     finally:
         stop_event.set()
         listener.cancel()
