@@ -159,5 +159,9 @@ rag:
         timeout_seconds: 15
         max_concurrency: 8
 
+# 本地质量实验台；生产环境未显式配置时，代码默认关闭且不注册 /rag/eval。
+eval:
+  enabled: true
+
 logging:
   level: INFO

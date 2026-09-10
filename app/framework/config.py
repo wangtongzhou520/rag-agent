@@ -301,6 +301,10 @@ class LoggingSettings(BaseModel):
     level: str = "INFO"
 
 
+class EvalSettings(BaseModel):
+    enabled: bool = False
+
+
 class Settings(BaseSettings):
     """全局配置根模型。优先级：环境变量(RAGENT_*) > application.yaml > 字段默认值。"""
 
@@ -317,6 +321,7 @@ class Settings(BaseSettings):
     storage: StorageSettings = StorageSettings()
     ai: AiSettings = AiSettings()
     rag: RagSettings = RagSettings()
+    eval: EvalSettings = EvalSettings()
     logging: LoggingSettings = LoggingSettings()
 
     @classmethod

@@ -50,6 +50,8 @@ from app.knowledge.router import router as knowledge_router
 from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
 from app.rag.conversation import ConversationService
+from app.rag.eval.router import router as eval_router
+from app.rag.eval.service import EvalService
 from app.rag.feedback import MessageFeedbackService
 from app.rag.intent.cache import IntentTreeCacheManager
 from app.rag.intent.classifier import DefaultIntentClassifier
@@ -239,22 +241,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             poll_interval_ms=rate_limit_settings.poll_interval_ms,
         )
         await chat_limiter.start()
+    mcp_dispatcher = McpIntentDispatcher(
+        McpQuestionExecutor(
+            mcp_registry,
+            model_runtime.llm,
+            settings.rag.mcp.global_max_concurrency,
+            {
+                server.name: server.max_concurrency
+                for server in settings.rag.mcp.servers
+            },
+        )
+    )
+    scope_resolver = RetrievalScopeResolver(
+        confidence_threshold=intent_settings.confidence_threshold
+    )
     pipeline = StreamChatPipeline(
         memory_service,
         model_runtime.llm,
         retrieval,
         intent_resolver,
-        mcp_dispatcher=McpIntentDispatcher(
-            McpQuestionExecutor(
-                mcp_registry,
-                model_runtime.llm,
-                settings.rag.mcp.global_max_concurrency,
-                {
-                    server.name: server.max_concurrency
-                    for server in settings.rag.mcp.servers
-                },
-            )
-        ),
+        mcp_dispatcher=mcp_dispatcher,
         guidance=IntentGuidanceService(
             enabled=guidance_settings.enabled,
             score_ratio=guidance_settings.ambiguity_score_ratio,
@@ -263,9 +269,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             checker=ModelAmbiguityChecker(model_runtime.llm),
         ),
         rewriter=rewrite_service,
-        scope_resolver=RetrievalScopeResolver(
-            confidence_threshold=intent_settings.confidence_threshold
-        ),
+        scope_resolver=scope_resolver,
         task_manager=stream_task_manager,
         prompt_resolver=prompt_resolver,
     )
@@ -278,6 +282,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.runtime_settings_service = runtime_settings_service
     app.state.agent_admin_service = agent_admin_service
     app.state.mcp_admin_service = mcp_admin_service
+    if settings.eval.enabled:
+        app.state.eval_service = EvalService(
+            engine,
+            rewrite_service,
+            intent_resolver,
+            retrieval,
+            scope_resolver,
+            mcp_dispatcher,
+        )
     auth_service = AuthService(
         engine, redis_client, settings.auth, settings.redis
     )
@@ -399,6 +412,8 @@ def create_app() -> FastAPI:
     app.include_router(agent_router)
     app.include_router(mcp_admin_router)
     app.include_router(runtime_settings_router)
+    if settings.eval.enabled:
+        app.include_router(eval_router)
 
     # TODO: 挂载其余领域 router（system / knowledge / ingestion / admin），随里程碑接入
 

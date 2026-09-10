@@ -56,6 +56,7 @@ from app.knowledge.models import (
 )
 from app.knowledge.tasks import KnowledgeTaskHandler
 from app.rag.conversation import ConversationService
+from app.rag.eval.service import EvalService
 from app.rag.feedback import MessageFeedbackService, MessageFeedbackTaskHandler
 from app.rag.intent.cache import IntentTreeCacheManager
 from app.rag.intent.orm import IntentNodeRecord
@@ -77,6 +78,7 @@ from app.rag.prompt.slots import AgentPromptSlot
 from app.rag.ratelimit import FairDistributedRateLimiter, PermitExpirableSemaphore
 from app.rag.recommend import RecommendedQuestionService
 from app.rag.retrieval.metadata import ChunkMetadataResolver
+from app.rag.retrieval.models import RetrievedChunk
 from app.rag.retrieval.pgvector import PgVectorRetrievalEngine
 from app.rag.rewrite.cache import QueryTermMappingCacheManager
 from app.rag.rewrite.models import QueryTermMapping
@@ -519,6 +521,66 @@ async def test_rate_limiter_timeout_and_cancel_do_not_leak_permits(
         keys = [key async for key in redis_client.scan_iter(f"{name}*")]
         if keys:
             await redis_client.delete(*keys)
+
+
+async def test_eval_resolves_business_doc_ids_and_preserves_missing_slots(
+    integration_engine: AsyncEngine,
+) -> None:
+    sessions = async_sessionmaker(integration_engine, expire_on_commit=False)
+    first_id = uuid.uuid4()
+    second_id = uuid.uuid4()
+    missing_id = uuid.uuid4()
+    async with sessions.begin() as session:
+        first_doc = KnowledgeDocument(
+            kb_id=1,
+            doc_name="FAQ.VAC.001.pdf",
+            source_type="file",
+            created_by=0,
+        )
+        second_doc = KnowledgeDocument(
+            kb_id=1,
+            doc_name="README",
+            source_type="file",
+            created_by=0,
+        )
+        session.add_all([first_doc, second_doc])
+        await session.flush()
+        session.add_all(
+            [
+                KnowledgeChunk(
+                    id=first_id,
+                    kb_id=1,
+                    doc_id=first_doc.id,
+                    chunk_index=0,
+                    content="first",
+                ),
+                KnowledgeChunk(
+                    id=second_id,
+                    kb_id=1,
+                    doc_id=second_doc.id,
+                    chunk_index=0,
+                    content="second",
+                ),
+            ]
+        )
+
+    service = EvalService(
+        integration_engine,
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+    )
+    doc_ids = await service._resolve_context_doc_ids(
+        [
+            RetrievedChunk(first_id, "first", 1),
+            RetrievedChunk(second_id, "second", 1),
+            RetrievedChunk(missing_id, "missing", 1),
+        ]
+    )
+
+    assert doc_ids == ["FAQ.VAC.001", "README", None]
 
 
 async def test_pg_queue_multiple_workers_claim_each_task_once(

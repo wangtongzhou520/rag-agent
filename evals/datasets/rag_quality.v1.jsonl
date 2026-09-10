@@ -1,0 +1,6 @@
+{"id":"leave-annual-days","question":"员工每年有多少天带薪年假？","referenceDocIds":["leave_policy"],"tags":["hr","single-hop"]}
+{"id":"leave-carry-over","question":"没休完的年假能结转多久？","referenceDocIds":["leave_policy"],"tags":["hr","deadline"]}
+{"id":"expense-submit-window","question":"费用发生后最晚什么时候提交报销？","referenceDocIds":["reimbursement_policy"],"tags":["finance","deadline"]}
+{"id":"expense-hotel-limit","question":"非一线城市出差住宿每晚上限是多少？","referenceDocIds":["reimbursement_policy"],"tags":["finance","number"]}
+{"id":"incident-p0-notify","question":"P0 故障发生后多久要建立应急沟通群？","referenceDocIds":["incident_response"],"tags":["sre","deadline"]}
+{"id":"incident-review","question":"严重故障恢复后复盘要包含哪些内容？","referenceDocIds":["incident_response"],"tags":["sre","list"]}

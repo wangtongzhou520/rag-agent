@@ -32,6 +32,9 @@ const RuntimeSettingsPage = lazy(() =>
     default: module.RuntimeSettingsPage,
   })),
 );
+const EvalPage = lazy(() =>
+  import("@/features/eval/EvalPage").then((module) => ({ default: module.EvalPage })),
+);
 const DocumentPage = lazy(() =>
   import("@/features/knowledge/DocumentPage").then((module) => ({
     default: module.DocumentPage,
@@ -106,6 +109,10 @@ export function McpRoute() {
 
 export function RuntimeSettingsRoute() {
   return <KnowledgeRoute Page={RuntimeSettingsPage} label="运行时与模型设置" />;
+}
+
+export function EvalRoute() {
+  return <KnowledgeRoute Page={EvalPage} label="检索质量实验台" />;
 }
 
 export function DocumentRoute() {
