@@ -124,6 +124,23 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
     }
 
 
+def thresholds_pass(
+    summary: dict[str, Any],
+    *,
+    min_hit_rate: float,
+    min_mrr: float,
+    min_context_precision: float,
+    max_latency_p95_ms: int,
+) -> bool:
+    return bool(
+        summary["errors"] == 0
+        and summary["docHitRate"] >= min_hit_rate
+        and summary["mrr"] >= min_mrr
+        and summary["contextPrecision"] >= min_context_precision
+        and summary["latencyP95Ms"] <= max_latency_p95_ms
+    )
+
+
 async def run_case(
     client: httpx.AsyncClient, case: EvalCase, semaphore: asyncio.Semaphore
 ) -> CaseResult:
@@ -165,14 +182,22 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             *(run_case(client, case, semaphore) for case in cases)
         )
     summary = summarize(results)
-    summary["thresholdsPassed"] = (
-        summary["errors"] == 0
-        and summary["docHitRate"] >= args.min_hit_rate
-        and summary["mrr"] >= args.min_mrr
+    summary["thresholdsPassed"] = thresholds_pass(
+        summary,
+        min_hit_rate=args.min_hit_rate,
+        min_mrr=args.min_mrr,
+        min_context_precision=args.min_context_precision,
+        max_latency_p95_ms=args.max_latency_p95_ms,
     )
     return {
         "dataset": str(args.dataset),
         "baseUrl": args.base_url,
+        "thresholds": {
+            "minHitRate": args.min_hit_rate,
+            "minMrr": args.min_mrr,
+            "minContextPrecision": args.min_context_precision,
+            "maxLatencyP95Ms": args.max_latency_p95_ms,
+        },
         "summary": summary,
         "cases": [asdict(result) for result in results],
     }
@@ -191,6 +216,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--min-hit-rate", type=float, default=0.8)
     parser.add_argument("--min-mrr", type=float, default=0.7)
+    parser.add_argument("--min-context-precision", type=float, default=0.2)
+    parser.add_argument("--max-latency-p95-ms", type=int, default=5000)
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
@@ -199,8 +226,13 @@ def main() -> None:
     args = parse_args()
     if args.concurrency <= 0 or args.timeout <= 0:
         raise SystemExit("concurrency and timeout must be greater than zero")
-    if not 0 <= args.min_hit_rate <= 1 or not 0 <= args.min_mrr <= 1:
+    if not all(
+        0 <= value <= 1
+        for value in (args.min_hit_rate, args.min_mrr, args.min_context_precision)
+    ):
         raise SystemExit("thresholds must be between zero and one")
+    if args.max_latency_p95_ms <= 0:
+        raise SystemExit("max latency must be greater than zero")
     payload = asyncio.run(run(args))
     rendered = json.dumps(payload, ensure_ascii=False, indent=2)
     if args.output:

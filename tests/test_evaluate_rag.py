@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from scripts.evaluate_rag import EvalCase, load_dataset, score_case, summarize
+from scripts.evaluate_rag import (
+    EvalCase,
+    load_dataset,
+    score_case,
+    summarize,
+    thresholds_pass,
+)
 
 
 def test_repository_dataset_is_versioned_and_loadable() -> None:
@@ -77,3 +83,24 @@ def test_summarize_keeps_errors_out_of_metric_denominators() -> None:
     assert summary["completed"] == 1
     assert summary["errors"] == 1
     assert summary["docHitRate"] == 1
+
+
+def test_quality_gate_includes_noise_latency_and_errors() -> None:
+    summary = {
+        "errors": 0,
+        "docHitRate": 1.0,
+        "mrr": 1.0,
+        "contextPrecision": 0.2,
+        "latencyP95Ms": 3453,
+    }
+    limits = {
+        "min_hit_rate": 0.8,
+        "min_mrr": 0.7,
+        "min_context_precision": 0.2,
+        "max_latency_p95_ms": 5000,
+    }
+
+    assert thresholds_pass(summary, **limits) is True
+    assert thresholds_pass({**summary, "contextPrecision": 0.19}, **limits) is False
+    assert thresholds_pass({**summary, "latencyP95Ms": 5001}, **limits) is False
+    assert thresholds_pass({**summary, "errors": 1}, **limits) is False
