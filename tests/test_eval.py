@@ -87,6 +87,7 @@ async def test_eval_service_deduplicates_chunks_and_preserves_context_doc_slots(
 
     assert result.retrieved_chunk_ids == [str(chunk.id)]
     assert result.retrieved_contexts == ["上下文"]
+    assert result.retrieved_scores == [0.9]
     assert result.retrieved_context_doc_ids == ["FAQ_VAC_001"]
     assert result.retrieved_doc_ids == ["FAQ_VAC_001"]
     assert result.intent_leaf_ids == ["7"]
@@ -129,6 +130,7 @@ async def test_eval_router_returns_camel_case_contract() -> None:
                 retrievedDocIds=[],
                 retrievedChunkIds=[],
                 retrievedContexts=[],
+                retrievedScores=[],
                 retrievedContextDocIds=[],
                 mcpContext="",
                 hasMcpSuccess=False,

@@ -84,6 +84,7 @@ ai:
       - { id: text-embedding-3-large, provider: aihubmix,    model: text-embedding-3-large,        dimension: 1536, priority: 3 }
   rerank:
     default_model: qwen3-rerank
+    min_score: 0.3          # 黄金集校准：裁剪低相关上下文，保留期望文档召回
     candidates:
       - { id: qwen3-rerank, provider: bailian, model: qwen3-rerank, url: "https://ws-95otow917zuyeam7.cn-beijing.maas.aliyuncs.com/compatible-api/v1/reranks", priority: 1 }
       - { id: rerank-noop, provider: noop, model: noop, priority: 100 }

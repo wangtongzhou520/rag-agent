@@ -9,6 +9,7 @@ class EvalResponse(BaseModel):
     retrieved_doc_ids: list[str] = Field(alias="retrievedDocIds")
     retrieved_chunk_ids: list[str] = Field(alias="retrievedChunkIds")
     retrieved_contexts: list[str] = Field(alias="retrievedContexts")
+    retrieved_scores: list[float] = Field(alias="retrievedScores")
     retrieved_context_doc_ids: list[str | None] = Field(
         alias="retrievedContextDocIds"
     )

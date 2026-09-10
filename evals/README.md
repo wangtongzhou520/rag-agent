@@ -15,7 +15,7 @@
 uv run python -m scripts.evaluate_rag
 ```
 
-默认门槛为文档 Hit Rate ≥ 0.8、MRR ≥ 0.7、Context Precision ≥ 0.2、Latency P95 ≤ 5000ms，
+默认门槛为文档 Hit Rate ≥ 0.8、MRR ≥ 0.7、Context Precision ≥ 0.75、Latency P95 ≤ 5000ms，
 任何接口错误也会令进程退出码为 1。接口只做
 改写、意图和检索，不生成答案，因此不会产生主回答模型费用；Embedding、Rerank、改写和
 意图模型仍按当前运行配置调用。需要认证的部署可将管理员原值 token 写入
@@ -30,9 +30,11 @@ uv run python -m scripts.evaluate_rag
 - Intent Accuracy：提供 `intentLeafIds` 的用例才计入；
 - Latency P95：服务端返回的端到端检索耗时 P95。
 
-## 本地首个基线
+## 本地基线与优化结果
 
-2026-09-10 在 Apple Silicon 开发机、Docker PostgreSQL/Redis 与百炼模型配置下运行 6 条：
-`Hit Rate=1.0`、`Doc Recall=1.0`、`MRR=1.0`、`Context Precision=0.2`、
-`Latency P95=3496ms`、`errors=0`。前三项说明期望文档均排第一；Context Precision 反映
-当前 `topK=10` 会同时带入旁支 Chunk，后续检索调优应优先提高该项且不得降低前三项。
+2026-09-10 在 Apple Silicon 开发机、Docker PostgreSQL/Redis 与百炼模型配置下运行 6 条。
+初始基线为 `Hit Rate=1.0`、`Doc Recall=1.0`、`MRR=1.0`、`Context Precision=0.2`、
+`Latency P95=3496ms`、`errors=0`。接入百炼 `relevance_score` 并设置
+`ai.rerank.min_score=0.30` 后，同一数据集实测为 `Hit Rate=1.0`、`Doc Recall=1.0`、
+`MRR=1.0`、`Context Precision=0.8333`、`Latency P95=3639ms`、`errors=0`。文档命中、
+召回和排名未回退，上下文精度提升 0.6333，并通过提高后的 0.75 门槛。

@@ -39,6 +39,8 @@ class CaseResult:
     intent_accuracy: float | None
     latency_ms: int
     retrieved_doc_ids: list[str]
+    retrieved_context_doc_ids: list[str | None]
+    retrieved_scores: list[float]
     error: str | None = None
 
 
@@ -98,6 +100,12 @@ def score_case(case: EvalCase, response: dict[str, Any]) -> CaseResult:
         else None,
         latency_ms=int(response.get("latencyMs") or 0),
         retrieved_doc_ids=retrieved,
+        retrieved_context_doc_ids=[
+            str(value) if value is not None else None for value in context_docs
+        ],
+        retrieved_scores=[
+            round(float(value), 6) for value in response.get("retrievedScores") or []
+        ],
     )
 
 
@@ -164,6 +172,8 @@ async def run_case(
             intent_accuracy=None,
             latency_ms=0,
             retrieved_doc_ids=[],
+            retrieved_context_doc_ids=[],
+            retrieved_scores=[],
             error=str(exc),
         )
 
@@ -216,7 +226,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--min-hit-rate", type=float, default=0.8)
     parser.add_argument("--min-mrr", type=float, default=0.7)
-    parser.add_argument("--min-context-precision", type=float, default=0.2)
+    parser.add_argument("--min-context-precision", type=float, default=0.75)
     parser.add_argument("--max-latency-p95-ms", type=int, default=5000)
     parser.add_argument("--output", type=Path)
     return parser.parse_args()

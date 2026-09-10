@@ -170,7 +170,10 @@ export function EvalPage() {
                     <section key={result.retrievedChunkIds[index] || index}>
                       <header>
                         <span>CHUNK {String(index + 1).padStart(2, "0")}</span>
-                        <code>{result.retrievedContextDocIds[index] || "未映射文档"}</code>
+                        <div>
+                          <b>{result.retrievedScores[index]?.toFixed(4) ?? "—"}</b>
+                          <code>{result.retrievedContextDocIds[index] || "未映射文档"}</code>
+                        </div>
                       </header>
                       <p>{context}</p>
                       <small>{result.retrievedChunkIds[index]}</small>

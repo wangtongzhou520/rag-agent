@@ -170,7 +170,11 @@ def build_model_runtime(settings: Settings) -> ModelRuntime:
     if str(ModelProvider.BAILIAN) in configured:
         provider = settings.ai.providers.bailian
         rerank_clients[str(ModelProvider.BAILIAN)] = BaiLianRerankClient(
-            http, provider.url, provider.api_key, provider.endpoints
+            http,
+            provider.url,
+            provider.api_key,
+            provider.endpoints,
+            settings.ai.rerank.min_score,
         )
     rerank = RoutingRerankService(
         ModelSelector({}, {}, health_store=health),

@@ -22,6 +22,7 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
           retrievedContexts: [
             "P0 故障需要立即通知技术负责人和业务负责人，并在 15 分钟内建立应急沟通群。",
           ],
+          retrievedScores: [0.9821],
           retrievedContextDocIds: ["incident_response"],
           mcpContext: "",
           hasMcpSuccess: false,

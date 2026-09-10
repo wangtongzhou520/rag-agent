@@ -1,5 +1,7 @@
 """百炼文本重排序协议客户端与 noop 客户端。"""
 
+import math
+from dataclasses import replace
 from typing import Protocol
 
 import httpx
@@ -33,11 +35,15 @@ class BaiLianRerankClient:
         provider_url: str,
         api_key: str = "",
         endpoints: dict | None = None,
+        min_score: float = 0.0,
     ) -> None:
+        if not 0 <= min_score <= 1:
+            raise ValueError("rerank min_score 必须在 0 到 1 之间")
         self._http = http
         self._provider_url = provider_url
         self._api_key = api_key
         self._endpoints = dict(endpoints or {})
+        self._min_score = min_score
 
     async def rerank(
         self,
@@ -80,19 +86,29 @@ class BaiLianRerankClient:
             )
         try:
             values = response.json()["results"]
-            indexes = [int(item["index"]) for item in values]
+            ranked = [
+                (int(item["index"]), float(item["relevance_score"]))
+                for item in values
+            ]
         except (ValueError, KeyError, TypeError) as exc:
             raise ModelClientException(
-                "rerank 响应结构不符（缺 results/index）",
+                "rerank 响应结构不符（缺 results/index/relevance_score）",
                 ModelClientErrorType.INVALID_RESPONSE,
                 cause=exc,
             ) from exc
-        if any(index < 0 or index >= len(candidates) for index in indexes):
+        if any(
+            index < 0 or index >= len(candidates) or not math.isfinite(score)
+            for index, score in ranked
+        ):
             raise ModelClientException(
-                "rerank 返回非法文档索引",
+                "rerank 返回非法文档索引或分数",
                 ModelClientErrorType.INVALID_RESPONSE,
             )
-        return [candidates[index] for index in indexes]
+        return [
+            replace(candidates[index], score=score)
+            for index, score in ranked
+            if score >= self._min_score
+        ]
 
 
 class NoopRerankClient:

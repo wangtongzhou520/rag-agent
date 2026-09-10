@@ -368,6 +368,16 @@
   align-items: center;
   justify-content: space-between;
 }
+.eval-context-list section header > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.eval-context-list section header b {
+  color: var(--success);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+}
 .eval-context-list section header span,
 .eval-context-list section header code {
   font-family: "IBM Plex Mono", monospace;

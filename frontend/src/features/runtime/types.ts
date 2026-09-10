@@ -46,6 +46,7 @@ export interface RuntimeSettings {
     search: {
       recallBudget: number;
       rerankCandidateLimit: number;
+      rerankMinScore: number;
       retrievalTimeoutMs: number;
       queryRewrite: { enabled: boolean; timeoutMs: number };
       scope: {

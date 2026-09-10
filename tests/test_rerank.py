@@ -61,13 +61,44 @@ async def test_bailian_client_sends_documents_and_uses_result_indexes() -> None:
     )
     values = chunks()
     result = await client.rerank("查询", values, 2, target)
-    assert result == [values[1], values[0]]
+    assert [item.id for item in result] == [values[1].id, values[0].id]
+    assert [item.score for item in result] == [0.95, 0.5]
     assert seen == {
         "model": "qwen3-rerank",
         "query": "查询",
         "documents": ["文档一", "文档二"],
         "top_n": 2,
     }
+
+
+async def test_bailian_client_filters_low_relevance_results() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"index": 0, "relevance_score": 0.81},
+                    {"index": 1, "relevance_score": 0.19},
+                ]
+            },
+        )
+
+    values = chunks()
+    client = BaiLianRerankClient(
+        MockHttpFactory(handler),
+        "https://unused.example",
+        "sk-test",
+        min_score=0.2,
+    )
+    target = ModelTarget(
+        ModelCandidate("rerank", "bailian", "qwen3-rerank", url="https://example.com")
+    )
+
+    result = await client.rerank("查询", values, 2, target)
+
+    assert len(result) == 1
+    assert result[0].id == values[0].id
+    assert result[0].score == 0.81
 
 
 async def test_routing_falls_back_to_noop() -> None:

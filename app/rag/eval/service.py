@@ -95,6 +95,7 @@ class EvalService:
             retrievedDocIds=doc_ids,
             retrievedChunkIds=[chunk.key for chunk in chunks],
             retrievedContexts=[chunk.text for chunk in chunks],
+            retrievedScores=[chunk.score for chunk in chunks],
             retrievedContextDocIds=context_doc_ids,
             mcpContext=mcp_context,
             hasMcpSuccess=success,

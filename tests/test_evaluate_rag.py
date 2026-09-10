@@ -75,6 +75,8 @@ def test_summarize_keeps_errors_out_of_metric_denominators() -> None:
         intent_accuracy=None,
         latency_ms=0,
         retrieved_doc_ids=[],
+        retrieved_context_doc_ids=[],
+        retrieved_scores=[],
         error="offline",
     )
 
@@ -90,17 +92,17 @@ def test_quality_gate_includes_noise_latency_and_errors() -> None:
         "errors": 0,
         "docHitRate": 1.0,
         "mrr": 1.0,
-        "contextPrecision": 0.2,
+        "contextPrecision": 0.8167,
         "latencyP95Ms": 3453,
     }
     limits = {
         "min_hit_rate": 0.8,
         "min_mrr": 0.7,
-        "min_context_precision": 0.2,
+        "min_context_precision": 0.75,
         "max_latency_p95_ms": 5000,
     }
 
     assert thresholds_pass(summary, **limits) is True
-    assert thresholds_pass({**summary, "contextPrecision": 0.19}, **limits) is False
+    assert thresholds_pass({**summary, "contextPrecision": 0.74}, **limits) is False
     assert thresholds_pass({**summary, "latencyP95Ms": 5001}, **limits) is False
     assert thresholds_pass({**summary, "errors": 1}, **limits) is False

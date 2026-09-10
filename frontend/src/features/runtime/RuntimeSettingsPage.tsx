@@ -233,6 +233,7 @@ export function RuntimeSettingsPage() {
                 <Parameter label="最终 TopK" value={settings.rag.default.topK} />
                 <Parameter label="召回预算" value={settings.rag.search.recallBudget} />
                 <Parameter label="Rerank 候选" value={settings.rag.search.rerankCandidateLimit} />
+                <Parameter label="Rerank 最低分" value={settings.rag.search.rerankMinScore.toFixed(2)} />
                 <Parameter label="检索超时" value={formatDuration(settings.rag.search.retrievalTimeoutMs)} />
                 <Parameter label="RRF K" value={settings.rag.search.fusion.rrfK} />
                 <Parameter label="熔断阈值" value={`${settings.ai.selection.failureThreshold} 次`} />

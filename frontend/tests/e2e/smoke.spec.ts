@@ -1599,6 +1599,7 @@ test("inspects runtime routing and masked provider settings", async ({ page }, t
       search: {
         recallBudget: 20,
         rerankCandidateLimit: 40,
+        rerankMinScore: 0.3,
         retrievalTimeoutMs: 15_000,
         queryRewrite: { enabled: true, timeoutMs: 5_000 },
         scope: { minIntentScore: 0.35, confidenceThreshold: 0.6, supplementRatio: 0.25 },

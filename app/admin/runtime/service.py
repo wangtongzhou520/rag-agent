@@ -40,6 +40,7 @@ class RuntimeSettingsService:
                 "search": {
                     "recallBudget": settings.rag.recall_budget,
                     "rerankCandidateLimit": settings.rag.rerank_candidate_limit,
+                    "rerankMinScore": settings.ai.rerank.min_score,
                     "retrievalTimeoutMs": settings.rag.retrieval.timeout_ms,
                     "queryRewrite": {
                         "enabled": settings.rag.query_rewrite.enabled,
