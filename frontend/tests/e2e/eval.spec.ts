@@ -25,6 +25,8 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
           retrievedScores: [0.9821],
           retrievedContextDocIds: ["incident_response"],
           retrievalCollections: [],
+          answer: "P0 故障应在 15 分钟内建立应急沟通群。[1](#cite-1)",
+          answerLatencyMs: 1260,
           mcpContext: "",
           hasMcpSuccess: false,
           needsClarification: false,
@@ -42,9 +44,12 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
   await page.goto("/admin/eval");
   await expect(page.getByRole("heading", { name: "检索质量实验台" })).toBeVisible();
   await page.getByRole("button", { name: /P0 故障发生后多久要建立应急沟通群/ }).click();
+  await page.getByRole("checkbox", { name: /同时生成答案/ }).check();
   await page.getByRole("button", { name: "运行单题评测" }).click();
   await expect(page.getByText("incident_response", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("842 ms", { exact: true })).toBeVisible();
+  await expect(page.getByText("1.26 s", { exact: true })).toBeVisible();
+  await expect(page.getByText(/P0 故障应在 15 分钟内/)).toBeVisible();
   await expect(page.getByText("知识库", { exact: true }).last()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("eval-desktop.png"), fullPage: true });
 

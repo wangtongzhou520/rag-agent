@@ -7,7 +7,7 @@
 - `question`：送入 `/rag/eval` 的原始问题；
 - `referenceDocIds`：期望命中的业务文档 ID，即导入文件名去掉最后一个扩展名；
 - `referenceAnswer`：人工核对过的标准答案，为后续答案正确性评测保留；
-- `expectedKeywords`：标准答案应覆盖的关键事实词，当前不参与纯检索评分；
+- `expectedKeywords`：标准答案应覆盖的原子事实词；单项中用 `|` 分隔允许的同义表达；
 - `intentLeafIds`：可选，与每个拆分子问题对应的 top-1 意图叶子 ID；
 - `tags`：便于按领域分析，不参与评分。
 
@@ -16,12 +16,13 @@
 
 ```bash
 uv run python -m scripts.evaluate_rag
+uv run python -m scripts.evaluate_rag --with-answers
 ```
 
 默认门槛为文档 Hit Rate ≥ 0.8、MRR ≥ 0.7、Context Precision ≥ 0.75、Latency P95 ≤ 5000ms，
-任何接口错误也会令进程退出码为 1。接口只做
-改写、意图和检索，不生成答案，因此不会产生主回答模型费用；Embedding、Rerank、改写和
-意图模型仍按当前运行配置调用。需要认证的部署可将管理员原值 token 写入
+任何接口错误也会令进程退出码为 1。默认只做改写、意图和检索，不产生主回答模型费用；
+`--with-answers` 会额外复用线上 KB Prompt 和 Chat 路由生成答案，但不创建会话、不写入消息记录。
+答案模式默认同时守卫关键事实覆盖率 ≥ 0.90 与完整答案率 ≥ 0.80。需要认证的部署可将管理员原值 token 写入
 `RAGENT_EVAL_TOKEN` 环境变量，脚本不会把 token 写进报告。
 脚本默认只检索 `m5_quality_baseline`，严格关闭跨库补充召回，避免开发库的其他文档
 污染评分。可通过重复传入 `--collection <name>` 评测其他受控集合。
@@ -34,6 +35,9 @@ uv run python -m scripts.evaluate_rag
 - Context Precision：召回 Chunk 中属于期望文档的比例；
 - Intent Accuracy：提供 `intentLeafIds` 的用例才计入；
 - Latency P95：服务端返回的端到端检索耗时 P95。
+- Answer Keyword Recall：生成答案覆盖黄金关键事实的比例，先做全半角、大小写和标点归一化；
+- Answer Complete Rate：覆盖当题全部关键事实的用例比例；
+- Answer Latency P95：仅 Chat 答案生成阶段的 P95，与检索 P95 分开统计。
 
 ## 本地基线与优化结果
 
@@ -49,3 +53,8 @@ uv run python -m scripts.evaluate_rag
 严格限定 `m5_quality_baseline` 且将 `ai.rerank.min_score` 校准为 `0.40` 后，
 `Hit Rate=1.0`、`Doc Recall=1.0`、`MRR=1.0`、`Context Precision=0.9556`、
 `Latency P95=3401ms`、`errors=0`，30/30 通过默认门槛。
+
+同日使用 `--with-answers` 运行最终答案回归：Answer Keyword Recall = `1.0`、
+Answer Complete Rate = `1.0`、Answer Latency P95 = `2263ms`；检索指标继续为
+Hit/Recall/MRR = `1.0`、Context Precision = `0.9556`、Retrieval P95 = `3144ms`，
+30/30 无错误通过全部门槛。

@@ -10,6 +10,7 @@ from starlette.routing import NoMatchFound
 
 from app.framework.config import get_settings
 from app.main import create_app
+from app.rag.eval.answer import EvalAnswerGenerator
 from app.rag.eval.router import router
 from app.rag.eval.schemas import EvalResponse
 from app.rag.eval.service import EvalService
@@ -59,6 +60,15 @@ class FakeMcpDispatcher:
         return self.evidence
 
 
+class FakeAnswerGenerator:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[RetrievedChunk]]] = []
+
+    async def generate(self, question: str, chunks: list[RetrievedChunk]) -> str:
+        self.calls.append((question, chunks))
+        return "基于评测上下文的答案"
+
+
 def _intent(kind: IntentKind, *, node_id: int = 7) -> SubQuestionIntent:
     node = IntentNode(
         id=node_id,
@@ -68,6 +78,21 @@ def _intent(kind: IntentKind, *, node_id: int = 7) -> SubQuestionIntent:
         kind=kind,
     )
     return SubQuestionIntent("子问题", (NodeScore(node, 0.91),))
+
+
+async def test_eval_answer_generator_reuses_grounded_prompt_without_memory() -> None:
+    llm = SimpleNamespace(chat=AsyncMock(return_value="  标准答案  "))
+    prompt_resolver = SimpleNamespace(resolve=AsyncMock(return_value="仅根据资料回答"))
+    generator = EvalAnswerGenerator(llm, prompt_resolver)  # type: ignore[arg-type]
+    chunk = RetrievedChunk(uuid4(), "年假为 10 天。", 0.9, doc_id=11)
+
+    answer = await generator.generate("年假几天？", [chunk])
+
+    assert answer == "标准答案"
+    request = llm.chat.await_args.args[0]
+    assert request.messages[-1].content == "年假几天？"
+    assert "仅根据资料回答" in request.messages[0].content
+    assert '<content ref="1">' in request.messages[0].content
 
 
 async def test_eval_service_deduplicates_chunks_and_preserves_context_doc_slots() -> None:
@@ -127,6 +152,29 @@ async def test_eval_service_classifies_mcp_clarification_without_kb_retrieval() 
     assert retriever.calls == 0
 
 
+async def test_eval_service_generates_answer_without_conversation_side_effects() -> None:
+    chunk = RetrievedChunk(uuid4(), "上下文", 0.9)
+    generator = FakeAnswerGenerator()
+    service = EvalService(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        FakeRewriter(),
+        FakeIntentResolver([_intent(IntentKind.KB)]),  # type: ignore[arg-type]
+        FakeRetriever([chunk]),
+        RetrievalScopeResolver(),
+        FakeMcpDispatcher(),  # type: ignore[arg-type]
+        generator,  # type: ignore[arg-type]
+    )
+    service._resolve_context_doc_ids = AsyncMock(  # type: ignore[method-assign]
+        return_value=["doc"]
+    )
+
+    result = await service.evaluate("问题", include_answer=True)
+
+    assert result.answer == "基于评测上下文的答案"
+    assert result.answer_latency_ms is not None
+    assert generator.calls == [("问题", [chunk])]
+
+
 async def test_eval_router_returns_camel_case_contract() -> None:
     app = FastAPI()
     app.include_router(router)
@@ -162,6 +210,7 @@ async def test_eval_router_returns_camel_case_contract() -> None:
                 ("question", "问题"),
                 ("collection", " quality-baseline "),
                 ("collection", "quality-baseline"),
+                ("includeAnswer", "true"),
             ],
         )
 
@@ -169,7 +218,7 @@ async def test_eval_router_returns_camel_case_contract() -> None:
     assert response.json()["data"]["latencyMs"] == 12
     assert response.json()["data"]["retrievedContextDocIds"] == []
     app.state.eval_service.evaluate.assert_awaited_once_with(  # type: ignore[union-attr]
-        "问题", collections=("quality-baseline",)
+        "问题", collections=("quality-baseline",), include_answer=True
     )
 
 

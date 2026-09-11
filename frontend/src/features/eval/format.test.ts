@@ -10,6 +10,8 @@ const response: EvalResponse = {
   retrievedScores: [],
   retrievedContextDocIds: [],
   retrievalCollections: [],
+  answer: null,
+  answerLatencyMs: null,
   mcpContext: "",
   hasMcpSuccess: false,
   needsClarification: false,

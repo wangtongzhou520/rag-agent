@@ -14,6 +14,8 @@ class EvalResponse(BaseModel):
         alias="retrievedContextDocIds"
     )
     retrieval_collections: list[str] = Field(alias="retrievalCollections")
+    answer: str | None = None
+    answer_latency_ms: int | None = Field(default=None, alias="answerLatencyMs")
     mcp_context: str = Field(alias="mcpContext")
     has_mcp_success: bool = Field(alias="hasMcpSuccess")
     needs_clarification: bool = Field(alias="needsClarification")

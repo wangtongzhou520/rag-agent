@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.knowledge.models import KnowledgeChunk, KnowledgeDocument
+from app.rag.eval.answer import EvalAnswerGenerator
 from app.rag.eval.schemas import EvalResponse
 from app.rag.intent.node import IntentKind, SubQuestionIntent
 from app.rag.intent.resolver import IntentResolver
@@ -45,6 +46,7 @@ class EvalService:
         retrieval: EvalRetriever,
         scope_resolver: RetrievalScopeResolver,
         mcp_dispatcher: McpIntentDispatcher,
+        answer_generator: EvalAnswerGenerator | None = None,
     ) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._rewriter = rewriter
@@ -52,9 +54,14 @@ class EvalService:
         self._retrieval = retrieval
         self._scope_resolver = scope_resolver
         self._mcp_dispatcher = mcp_dispatcher
+        self._answer_generator = answer_generator
 
     async def evaluate(
-        self, question: str, *, collections: Sequence[str] = ()
+        self,
+        question: str,
+        *,
+        collections: Sequence[str] = (),
+        include_answer: bool = False,
     ) -> EvalResponse:
         started = perf_counter()
         rewrite = await self._rewriter.rewrite_with_split(question.strip(), ())
@@ -102,6 +109,17 @@ class EvalService:
         if has_mcp_intent and not evidence:
             failure = True
 
+        retrieval_latency_ms = max(0, int((perf_counter() - started) * 1000))
+        answer: str | None = None
+        answer_latency_ms: int | None = None
+        if include_answer:
+            answer_started = perf_counter()
+            if chunks and self._answer_generator is not None:
+                answer = await self._answer_generator.generate(question, chunks)
+            else:
+                answer = ""
+            answer_latency_ms = max(0, int((perf_counter() - answer_started) * 1000))
+
         return EvalResponse(
             retrievedDocIds=doc_ids,
             retrievedChunkIds=[chunk.key for chunk in chunks],
@@ -109,6 +127,8 @@ class EvalService:
             retrievedScores=[chunk.score for chunk in chunks],
             retrievedContextDocIds=context_doc_ids,
             retrievalCollections=list(scope.collections),
+            answer=answer,
+            answerLatencyMs=answer_latency_ms,
             mcpContext=mcp_context,
             hasMcpSuccess=success,
             needsClarification=clarification,
@@ -116,7 +136,7 @@ class EvalService:
             hasKb=bool(chunks),
             subIntents=[item.sub_question for item in intents],
             intentLeafIds=[self._top_leaf_id(item) for item in intents],
-            latencyMs=max(0, int((perf_counter() - started) * 1000)),
+            latencyMs=retrieval_latency_ms,
         )
 
     async def _resolve_context_doc_ids(

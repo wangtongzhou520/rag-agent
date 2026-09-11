@@ -1,4 +1,4 @@
-"""对版本化 JSONL 数据集运行 RAG 纯检索质量回归。"""
+"""对版本化 JSONL 数据集运行 RAG 检索与可选答案质量回归。"""
 
 import argparse
 import asyncio
@@ -7,6 +7,7 @@ import math
 import os
 import statistics
 import sys
+import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -33,13 +34,19 @@ class EvalCase(BaseModel):
 class CaseResult:
     id: str
     question: str
+    reference_answer: str
+    expected_keywords: list[str]
     passed: bool
     doc_hit: float
     doc_recall: float
     reciprocal_rank: float
     context_precision: float
     intent_accuracy: float | None
+    answer_keyword_recall: float | None
+    answer_complete: float | None
     latency_ms: int
+    answer_latency_ms: int | None
+    answer: str | None
     retrieved_doc_ids: list[str]
     retrieved_context_doc_ids: list[str | None]
     retrieved_scores: list[float]
@@ -87,10 +94,30 @@ def score_case(case: EvalCase, response: dict[str, Any]) -> CaseResult:
         comparable = sum(value is not None for value in expected_intents)
         intent_accuracy = matched / comparable if comparable else None
     doc_recall = len(matching) / len(expected)
+    answer_value = response.get("answer")
+    answer = str(answer_value) if answer_value is not None else None
+    answer_keyword_recall = None
+    answer_complete = None
+    if answer is not None and case.expected_keywords:
+        normalized_answer = normalize_fact_text(answer)
+        matched_keywords = sum(
+            any(
+                normalize_fact_text(option) in normalized_answer
+                for option in keyword.split("|")
+                if option.strip()
+            )
+            for keyword in case.expected_keywords
+        )
+        answer_keyword_recall = round(
+            matched_keywords / len(case.expected_keywords), 4
+        )
+        answer_complete = float(matched_keywords == len(case.expected_keywords))
     return CaseResult(
         id=case.id,
         question=case.question,
-        passed=bool(matching),
+        reference_answer=case.reference_answer,
+        expected_keywords=case.expected_keywords,
+        passed=bool(matching) and answer_complete != 0,
         doc_hit=float(bool(matching)),
         doc_recall=round(doc_recall, 4),
         reciprocal_rank=round(1 / first_rank if first_rank else 0.0, 4),
@@ -100,7 +127,15 @@ def score_case(case: EvalCase, response: dict[str, Any]) -> CaseResult:
         intent_accuracy=round(intent_accuracy, 4)
         if intent_accuracy is not None
         else None,
+        answer_keyword_recall=answer_keyword_recall,
+        answer_complete=answer_complete,
         latency_ms=int(response.get("latencyMs") or 0),
+        answer_latency_ms=(
+            int(response["answerLatencyMs"])
+            if response.get("answerLatencyMs") is not None
+            else None
+        ),
+        answer=answer,
         retrieved_doc_ids=retrieved,
         retrieved_context_doc_ids=[
             str(value) if value is not None else None for value in context_docs
@@ -111,6 +146,12 @@ def score_case(case: EvalCase, response: dict[str, Any]) -> CaseResult:
     )
 
 
+def normalize_fact_text(value: str) -> str:
+    """统一全半角、大小写并去掉标点空白，降低格式差异对事实匹配的影响。"""
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    return "".join(character for character in normalized if character.isalnum())
+
+
 def summarize(results: list[CaseResult]) -> dict[str, Any]:
     valid = [result for result in results if result.error is None]
     intent_values = [
@@ -119,6 +160,11 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
         if result.intent_accuracy is not None
     ]
     latencies = sorted(result.latency_ms for result in valid)
+    answer_latencies = sorted(
+        result.answer_latency_ms
+        for result in valid
+        if result.answer_latency_ms is not None
+    )
     p95_index = max(0, min(len(latencies) - 1, math.ceil(len(latencies) * 0.95) - 1))
     mean = lambda values: round(statistics.fmean(values), 4) if values else 0.0
     return {
@@ -130,7 +176,38 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
         "mrr": mean([result.reciprocal_rank for result in valid]),
         "contextPrecision": mean([result.context_precision for result in valid]),
         "intentAccuracy": mean(intent_values) if intent_values else None,
+        "answerKeywordRecall": mean(
+            [
+                result.answer_keyword_recall
+                for result in valid
+                if result.answer_keyword_recall is not None
+            ]
+        )
+        if any(result.answer_keyword_recall is not None for result in valid)
+        else None,
+        "answerCompleteRate": mean(
+            [
+                result.answer_complete
+                for result in valid
+                if result.answer_complete is not None
+            ]
+        )
+        if any(result.answer_complete is not None for result in valid)
+        else None,
         "latencyP95Ms": latencies[p95_index] if latencies else 0,
+        "answerLatencyP95Ms": (
+            answer_latencies[
+                max(
+                    0,
+                    min(
+                        len(answer_latencies) - 1,
+                        math.ceil(len(answer_latencies) * 0.95) - 1,
+                    ),
+                )
+            ]
+            if answer_latencies
+            else None
+        ),
     }
 
 
@@ -141,6 +218,8 @@ def thresholds_pass(
     min_mrr: float,
     min_context_precision: float,
     max_latency_p95_ms: int,
+    min_answer_keyword_recall: float | None = None,
+    min_answer_complete_rate: float | None = None,
 ) -> bool:
     return bool(
         summary["errors"] == 0
@@ -148,6 +227,20 @@ def thresholds_pass(
         and summary["mrr"] >= min_mrr
         and summary["contextPrecision"] >= min_context_precision
         and summary["latencyP95Ms"] <= max_latency_p95_ms
+        and (
+            min_answer_keyword_recall is None
+            or (
+                summary["answerKeywordRecall"] is not None
+                and summary["answerKeywordRecall"] >= min_answer_keyword_recall
+            )
+        )
+        and (
+            min_answer_complete_rate is None
+            or (
+                summary["answerCompleteRate"] is not None
+                and summary["answerCompleteRate"] >= min_answer_complete_rate
+            )
+        )
     )
 
 
@@ -156,11 +249,14 @@ async def run_case(
     case: EvalCase,
     semaphore: asyncio.Semaphore,
     collections: list[str],
+    include_answer: bool,
 ) -> CaseResult:
     try:
         async with semaphore:
             params = [("question", case.question)]
             params.extend(("collection", value) for value in collections)
+            if include_answer:
+                params.append(("includeAnswer", "true"))
             response = await client.get("/rag/eval", params=params)
         response.raise_for_status()
         payload = response.json()
@@ -171,13 +267,19 @@ async def run_case(
         return CaseResult(
             id=case.id,
             question=case.question,
+            reference_answer=case.reference_answer,
+            expected_keywords=case.expected_keywords,
             passed=False,
             doc_hit=0,
             doc_recall=0,
             reciprocal_rank=0,
             context_precision=0,
             intent_accuracy=None,
+            answer_keyword_recall=None,
+            answer_complete=None,
             latency_ms=0,
+            answer_latency_ms=None,
+            answer=None,
             retrieved_doc_ids=[],
             retrieved_context_doc_ids=[],
             retrieved_scores=[],
@@ -196,7 +298,16 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     ) as client:
         semaphore = asyncio.Semaphore(args.concurrency)
         results = await asyncio.gather(
-            *(run_case(client, case, semaphore, args.collection) for case in cases)
+            *(
+                run_case(
+                    client,
+                    case,
+                    semaphore,
+                    args.collection,
+                    args.with_answers,
+                )
+                for case in cases
+            )
         )
     summary = summarize(results)
     summary["thresholdsPassed"] = thresholds_pass(
@@ -205,6 +316,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         min_mrr=args.min_mrr,
         min_context_precision=args.min_context_precision,
         max_latency_p95_ms=args.max_latency_p95_ms,
+        min_answer_keyword_recall=(
+            args.min_answer_keyword_recall if args.with_answers else None
+        ),
+        min_answer_complete_rate=(
+            args.min_answer_complete_rate if args.with_answers else None
+        ),
     )
     return {
         "dataset": str(args.dataset),
@@ -215,6 +332,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             "minMrr": args.min_mrr,
             "minContextPrecision": args.min_context_precision,
             "maxLatencyP95Ms": args.max_latency_p95_ms,
+            "minAnswerKeywordRecall": (
+                args.min_answer_keyword_recall if args.with_answers else None
+            ),
+            "minAnswerCompleteRate": (
+                args.min_answer_complete_rate if args.with_answers else None
+            ),
         },
         "summary": summary,
         "cases": [asdict(result) for result in results],
@@ -238,10 +361,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--timeout", type=float, default=60)
+    parser.add_argument(
+        "--with-answers",
+        action="store_true",
+        help="generate grounded answers and enable answer quality gates",
+    )
     parser.add_argument("--min-hit-rate", type=float, default=0.8)
     parser.add_argument("--min-mrr", type=float, default=0.7)
     parser.add_argument("--min-context-precision", type=float, default=0.75)
     parser.add_argument("--max-latency-p95-ms", type=int, default=5000)
+    parser.add_argument("--min-answer-keyword-recall", type=float, default=0.9)
+    parser.add_argument("--min-answer-complete-rate", type=float, default=0.8)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.collection is None:
@@ -255,7 +385,13 @@ def main() -> None:
         raise SystemExit("concurrency and timeout must be greater than zero")
     if not all(
         0 <= value <= 1
-        for value in (args.min_hit_rate, args.min_mrr, args.min_context_precision)
+        for value in (
+            args.min_hit_rate,
+            args.min_mrr,
+            args.min_context_precision,
+            args.min_answer_keyword_recall,
+            args.min_answer_complete_rate,
+        )
     ):
         raise SystemExit("thresholds must be between zero and one")
     if args.max_latency_p95_ms <= 0:

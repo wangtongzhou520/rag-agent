@@ -22,9 +22,14 @@ async def evaluate(
     request: Request,
     question: str = Query(min_length=1, max_length=1000),
     collection: Annotated[list[str] | None, Query()] = None,
+    include_answer: Annotated[bool, Query(alias="includeAnswer")] = False,
 ) -> dict:
     collections = tuple(
         dict.fromkeys(value.strip() for value in collection or () if value.strip())
     )
-    result = await _service(request).evaluate(question, collections=collections)
+    result = await _service(request).evaluate(
+        question,
+        collections=collections,
+        include_answer=include_answer,
+    )
     return Results.success(result).model_dump(by_alias=True)

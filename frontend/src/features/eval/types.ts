@@ -5,6 +5,8 @@ export interface EvalResponse {
   retrievedScores: number[];
   retrievedContextDocIds: Array<string | null>;
   retrievalCollections: string[];
+  answer?: string | null;
+  answerLatencyMs?: number | null;
   mcpContext: string;
   hasMcpSuccess: boolean;
   needsClarification: boolean;

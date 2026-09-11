@@ -6,6 +6,7 @@ import {
   Clock3,
   FileSearch,
   FlaskConical,
+  MessageSquareText,
   Route,
   TerminalSquare,
 } from "lucide-react";
@@ -25,13 +26,14 @@ const EXAMPLES = [
 
 export function EvalPage() {
   const [question, setQuestion] = useState(EXAMPLES[0]);
+  const [includeAnswer, setIncludeAnswer] = useState(false);
   const mutation = useMutation({ mutationFn: evaluateQuestion });
   const result = mutation.data;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const normalized = question.trim();
-    if (normalized) mutation.mutate(normalized);
+    if (normalized) mutation.mutate({ question: normalized, includeAnswer });
   };
 
   return (
@@ -72,6 +74,17 @@ export function EvalPage() {
               </button>
             ))}
           </div>
+          <label className="eval-answer-option">
+            <input
+              type="checkbox"
+              checked={includeAnswer}
+              onChange={(event) => setIncludeAnswer(event.target.checked)}
+            />
+            <div>
+              <strong>同时生成答案</strong>
+              <small>额外调用 Chat 模型，不写入会话记录</small>
+            </div>
+          </label>
           <Button type="submit" disabled={!question.trim() || mutation.isPending}>
             {mutation.isPending ? "正在穿过检索链路…" : "运行单题评测"}
             {!mutation.isPending && <ArrowRight aria-hidden="true" />}
@@ -154,6 +167,23 @@ export function EvalPage() {
             />
             <Metric icon={Route} label="证据路由" value={routeLabel(result)} wide />
           </div>
+
+          {result.answer !== null && result.answer !== undefined && (
+            <article className="eval-answer-panel">
+              <header>
+                <div>
+                  <MessageSquareText aria-hidden="true" />
+                  <span>GROUNDED ANSWER</span>
+                </div>
+                <small>
+                  {result.answerLatencyMs === null || result.answerLatencyMs === undefined
+                    ? "生成完成"
+                    : formatEvalLatency(result.answerLatencyMs)}
+                </small>
+              </header>
+              <p>{result.answer || "未生成可评测的答案。"}</p>
+            </article>
+          )}
 
           <div className="eval-result-grid">
             <article className="eval-evidence-panel">

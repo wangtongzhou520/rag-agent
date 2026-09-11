@@ -57,6 +57,35 @@ def test_score_case_calculates_retrieval_and_intent_metrics() -> None:
     assert result.intent_accuracy == 1
 
 
+def test_score_case_normalizes_and_scores_answer_facts() -> None:
+    case = EvalCase(
+        id="answer",
+        question="Q",
+        referenceDocIds=["doc"],
+        referenceAnswer="30 个自然日内提交。",
+        expectedKeywords=["30个自然日", "发起报销|提交报销"],
+    )
+
+    result = score_case(
+        case,
+        {
+            "retrievedDocIds": ["doc"],
+            "retrievedContextDocIds": ["doc"],
+            "answer": "请在 30 个自然日内发起报销。[1](#cite-1)",
+            "answerLatencyMs": 321,
+        },
+    )
+
+    assert result.answer_keyword_recall == 1
+    assert result.answer_complete == 1
+    assert result.answer_latency_ms == 321
+    assert result.passed is True
+    summary = summarize([result])
+    assert summary["answerKeywordRecall"] == 1
+    assert summary["answerCompleteRate"] == 1
+    assert summary["answerLatencyP95Ms"] == 321
+
+
 def test_summarize_keeps_errors_out_of_metric_denominators() -> None:
     passed = score_case(
         EvalCase(id="ok", question="Q", referenceDocIds=["doc"]),
@@ -69,13 +98,19 @@ def test_summarize_keeps_errors_out_of_metric_denominators() -> None:
     failed = passed.__class__(
         id="error",
         question="Q2",
+        reference_answer="",
+        expected_keywords=[],
         passed=False,
         doc_hit=0,
         doc_recall=0,
         reciprocal_rank=0,
         context_precision=0,
         intent_accuracy=None,
+        answer_keyword_recall=None,
+        answer_complete=None,
         latency_ms=0,
+        answer_latency_ms=None,
+        answer=None,
         retrieved_doc_ids=[],
         retrieved_context_doc_ids=[],
         retrieved_scores=[],
@@ -108,3 +143,31 @@ def test_quality_gate_includes_noise_latency_and_errors() -> None:
     assert thresholds_pass({**summary, "contextPrecision": 0.74}, **limits) is False
     assert thresholds_pass({**summary, "latencyP95Ms": 5001}, **limits) is False
     assert thresholds_pass({**summary, "errors": 1}, **limits) is False
+
+
+def test_quality_gate_can_require_answer_metrics() -> None:
+    summary = {
+        "errors": 0,
+        "docHitRate": 1.0,
+        "mrr": 1.0,
+        "contextPrecision": 0.95,
+        "latencyP95Ms": 1200,
+        "answerKeywordRecall": 0.92,
+        "answerCompleteRate": 0.83,
+    }
+    limits = {
+        "min_hit_rate": 0.8,
+        "min_mrr": 0.7,
+        "min_context_precision": 0.75,
+        "max_latency_p95_ms": 5000,
+        "min_answer_keyword_recall": 0.9,
+        "min_answer_complete_rate": 0.8,
+    }
+
+    assert thresholds_pass(summary, **limits) is True
+    assert thresholds_pass(
+        {**summary, "answerKeywordRecall": 0.89}, **limits
+    ) is False
+    assert thresholds_pass(
+        {**summary, "answerCompleteRate": 0.79}, **limits
+    ) is False
