@@ -45,6 +45,7 @@ M5 质量闭环同时提供条件启用的纯检索评测接口、版本化黄�
 | [06-MCP 工具体系](docs/06-MCP工具体系.md) | MCP server/client、工具注册、LLM 提参与三态结局 |
 | [07-系统管理与可观测](docs/07-系统管理与可观测.md) | 认证授权、审计、RAG Trace、Dashboard、agents 人设与 Prompt 槽位 |
 | [08-前端工程与页面设计](docs/08-前端工程与页面设计.md) | React 工程、蓝色视觉体系、页面规划、REST/SSE 联调、测试与分期 |
+| [09-CI质量门禁](docs/09-CI质量门禁.md) | Linux/Apple Silicon 后端、Docker 集成、前端 E2E 与真实 RAG 评测门禁 |
 
 ## 开发命令
 
