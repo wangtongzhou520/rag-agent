@@ -15,7 +15,7 @@ from app.rag.eval.schemas import EvalResponse
 from app.rag.eval.service import EvalService
 from app.rag.intent.node import IntentKind, IntentNode, NodeScore, SubQuestionIntent
 from app.rag.mcp.service import McpEvidence
-from app.rag.retrieval.models import RetrievedChunk
+from app.rag.retrieval.models import RetrievalScope, RetrievedChunk
 from app.rag.retrieval.scope import RetrievalScopeResolver
 from app.rag.rewrite.models import RewriteResult
 from app.system.auth.deps import require_admin
@@ -43,9 +43,11 @@ class FakeRetriever:
     def __init__(self, chunks: list[RetrievedChunk]) -> None:
         self.chunks = chunks
         self.calls = 0
+        self.kwargs: dict[str, object] = {}
 
     async def retrieve(self, *args: object, **kwargs: object) -> list[RetrievedChunk]:
         self.calls += 1
+        self.kwargs = kwargs
         return self.chunks
 
 
@@ -83,7 +85,9 @@ async def test_eval_service_deduplicates_chunks_and_preserves_context_doc_slots(
         return_value=["FAQ_VAC_001"]
     )
 
-    result = await service.evaluate("  如何办理？  ")
+    result = await service.evaluate(
+        "  如何办理？  ", collections=("quality-baseline", "quality-baseline")
+    )
 
     assert result.retrieved_chunk_ids == [str(chunk.id)]
     assert result.retrieved_contexts == ["上下文"]
@@ -92,6 +96,11 @@ async def test_eval_service_deduplicates_chunks_and_preserves_context_doc_slots(
     assert result.retrieved_doc_ids == ["FAQ_VAC_001"]
     assert result.intent_leaf_ids == ["7"]
     assert result.has_kb is True
+    assert result.retrieval_collections == ["quality-baseline"]
+    scope = retriever.kwargs["scope"]
+    assert isinstance(scope, RetrievalScope)
+    assert scope.collections == ("quality-baseline",)
+    assert scope.allow_supplement is False
     assert retriever.calls == 1
 
 
@@ -132,6 +141,7 @@ async def test_eval_router_returns_camel_case_contract() -> None:
                 retrievedContexts=[],
                 retrievedScores=[],
                 retrievedContextDocIds=[],
+                retrievalCollections=["quality-baseline"],
                 mcpContext="",
                 hasMcpSuccess=False,
                 needsClarification=False,
@@ -146,11 +156,21 @@ async def test_eval_router_returns_camel_case_contract() -> None:
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.get("/rag/eval", params={"question": "问题"})
+        response = await client.get(
+            "/rag/eval",
+            params=[
+                ("question", "问题"),
+                ("collection", " quality-baseline "),
+                ("collection", "quality-baseline"),
+            ],
+        )
 
     assert response.status_code == 200
     assert response.json()["data"]["latencyMs"] == 12
     assert response.json()["data"]["retrievedContextDocIds"] == []
+    app.state.eval_service.evaluate.assert_awaited_once_with(  # type: ignore[union-attr]
+        "问题", collections=("quality-baseline",)
+    )
 
 
 def test_eval_route_is_conditionally_registered(monkeypatch) -> None:

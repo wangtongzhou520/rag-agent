@@ -14,11 +14,13 @@ from scripts.evaluate_rag import (
 
 
 def test_repository_dataset_is_versioned_and_loadable() -> None:
-    cases = load_dataset(Path("evals/datasets/rag_quality.v1.jsonl"))
+    cases = load_dataset(Path("evals/datasets/rag_quality.v2.jsonl"))
 
-    assert len(cases) == 6
+    assert len(cases) == 30
     assert len({case.id for case in cases}) == len(cases)
     assert all(case.reference_doc_ids for case in cases)
+    assert all(case.reference_answer for case in cases)
+    assert all(case.expected_keywords for case in cases)
 
 
 def test_duplicate_dataset_ids_are_rejected(tmp_path: Path) -> None:

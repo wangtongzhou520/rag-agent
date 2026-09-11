@@ -153,7 +153,7 @@ class RerankCandidateSettings(BaseModel):
 class RerankSettings(BaseModel):
     default_model: str | None = None
     candidates: list[RerankCandidateSettings] = []
-    min_score: float = Field(default=0.3, ge=0, le=1)
+    min_score: float = Field(default=0.4, ge=0, le=1)
 
 
 class SelectionSettings(BaseModel):

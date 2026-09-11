@@ -13,6 +13,7 @@ class EvalResponse(BaseModel):
     retrieved_context_doc_ids: list[str | None] = Field(
         alias="retrievedContextDocIds"
     )
+    retrieval_collections: list[str] = Field(alias="retrievalCollections")
     mcp_context: str = Field(alias="mcpContext")
     has_mcp_success: bool = Field(alias="hasMcpSuccess")
     needs_clarification: bool = Field(alias="needsClarification")

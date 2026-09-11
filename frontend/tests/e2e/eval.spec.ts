@@ -24,6 +24,7 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
           ],
           retrievedScores: [0.9821],
           retrievedContextDocIds: ["incident_response"],
+          retrievalCollections: [],
           mcpContext: "",
           hasMcpSuccess: false,
           needsClarification: false,

@@ -4,6 +4,7 @@ export interface EvalResponse {
   retrievedContexts: string[];
   retrievedScores: number[];
   retrievedContextDocIds: Array<string | null>;
+  retrievalCollections: string[];
   mcpContext: string;
   hasMcpSuccess: boolean;
   needsClarification: boolean;

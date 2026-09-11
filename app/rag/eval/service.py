@@ -53,7 +53,9 @@ class EvalService:
         self._scope_resolver = scope_resolver
         self._mcp_dispatcher = mcp_dispatcher
 
-    async def evaluate(self, question: str) -> EvalResponse:
+    async def evaluate(
+        self, question: str, *, collections: Sequence[str] = ()
+    ) -> EvalResponse:
         started = perf_counter()
         rewrite = await self._rewriter.rewrite_with_split(question.strip(), ())
         intents = await self._intent_resolver.resolve(rewrite)
@@ -63,10 +65,19 @@ class EvalService:
             not scores or any(score.node.kind == IntentKind.KB for score in scores)
         )
 
+        intent_scope = self._scope_resolver.resolve(intents)
+        normalized_collections = tuple(
+            dict.fromkeys(value.strip() for value in collections if value.strip())
+        )
+        scope = RetrievalScope(
+            collections=normalized_collections or intent_scope.collections,
+            top_k=intent_scope.top_k,
+            allow_supplement=not normalized_collections,
+        )
+
         async def retrieve() -> list[RetrievedChunk]:
             if not should_retrieve:
                 return []
-            scope = self._scope_resolver.resolve(intents)
             return await self._retrieval.retrieve(
                 question,
                 scope=scope if scope.restricted else None,
@@ -97,6 +108,7 @@ class EvalService:
             retrievedContexts=[chunk.text for chunk in chunks],
             retrievedScores=[chunk.score for chunk in chunks],
             retrievedContextDocIds=context_doc_ids,
+            retrievalCollections=list(scope.collections),
             mcpContext=mcp_context,
             hasMcpSuccess=success,
             needsClarification=clarification,

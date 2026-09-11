@@ -21,6 +21,8 @@ class EvalCase(BaseModel):
     id: str
     question: str
     reference_doc_ids: list[str] = Field(alias="referenceDocIds")
+    reference_answer: str = Field(default="", alias="referenceAnswer")
+    expected_keywords: list[str] = Field(default_factory=list, alias="expectedKeywords")
     intent_leaf_ids: list[str | None] = Field(
         default_factory=list, alias="intentLeafIds"
     )
@@ -150,11 +152,16 @@ def thresholds_pass(
 
 
 async def run_case(
-    client: httpx.AsyncClient, case: EvalCase, semaphore: asyncio.Semaphore
+    client: httpx.AsyncClient,
+    case: EvalCase,
+    semaphore: asyncio.Semaphore,
+    collections: list[str],
 ) -> CaseResult:
     try:
         async with semaphore:
-            response = await client.get("/rag/eval", params={"question": case.question})
+            params = [("question", case.question)]
+            params.extend(("collection", value) for value in collections)
+            response = await client.get("/rag/eval", params=params)
         response.raise_for_status()
         payload = response.json()
         if str(payload.get("code")) != "0" or not isinstance(payload.get("data"), dict):
@@ -189,7 +196,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     ) as client:
         semaphore = asyncio.Semaphore(args.concurrency)
         results = await asyncio.gather(
-            *(run_case(client, case, semaphore) for case in cases)
+            *(run_case(client, case, semaphore, args.collection) for case in cases)
         )
     summary = summarize(results)
     summary["thresholdsPassed"] = thresholds_pass(
@@ -202,6 +209,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "dataset": str(args.dataset),
         "baseUrl": args.base_url,
+        "collections": args.collection,
         "thresholds": {
             "minHitRate": args.min_hit_rate,
             "minMrr": args.min_mrr,
@@ -216,12 +224,18 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--dataset", type=Path, default=Path("evals/datasets/rag_quality.v1.jsonl")
+        "--dataset", type=Path, default=Path("evals/datasets/rag_quality.v2.jsonl")
     )
     parser.add_argument(
         "--base-url", default="http://127.0.0.1:9090/api/ragent"
     )
     parser.add_argument("--token-env", default="RAGENT_EVAL_TOKEN")
+    parser.add_argument(
+        "--collection",
+        action="append",
+        default=None,
+        help="limit retrieval to a collection; repeat for multiple collections",
+    )
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--min-hit-rate", type=float, default=0.8)
@@ -229,7 +243,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-context-precision", type=float, default=0.75)
     parser.add_argument("--max-latency-p95-ms", type=int, default=5000)
     parser.add_argument("--output", type=Path)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.collection is None:
+        args.collection = ["m5_quality_baseline"]
+    return args
 
 
 def main() -> None:

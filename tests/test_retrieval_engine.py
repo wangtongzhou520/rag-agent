@@ -188,6 +188,33 @@ async def test_vector_channel_passes_intent_scope() -> None:
     }
 
 
+async def test_vector_channel_can_disable_global_supplement() -> None:
+    class ScopedRetriever:
+        def __init__(self) -> None:
+            self.options = None
+
+        async def retrieve(self, question: str, **options):
+            self.options = options
+            return []
+
+    retriever = ScopedRetriever()
+    context = SearchContext(
+        "original",
+        "rewritten",
+        RetrievalBudget(20, 40, 10),
+        scope=RetrievalScope(("quality-baseline",), allow_supplement=False),
+    )
+
+    await VectorSearchChannel(retriever).search(context)
+
+    assert retriever.options == {
+        "limit": 20,
+        "collections": ("quality-baseline",),
+        "supplement_ratio": 0.0,
+        "strict_collections": True,
+    }
+
+
 async def test_engine_passes_rewritten_question_to_channels() -> None:
     expected = chunk(uuid4(), 0.8, 11)
 

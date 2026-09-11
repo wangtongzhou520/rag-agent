@@ -41,6 +41,7 @@ class PgVectorRetrievalEngine:
         limit: int | None = None,
         collections: tuple[str, ...] = (),
         supplement_ratio: float = 0.0,
+        strict_collections: bool = False,
     ) -> list[RetrievedChunk]:
         try:
             resolved_limit = max(1, limit or self._top_k)
@@ -52,6 +53,8 @@ class PgVectorRetrievalEngine:
                 collection for values in groups.values() for collection in values
             }
             targets = requested_targets & all_collections
+            if requested_targets and strict_collections and not targets:
+                return []
             quota = ScopeQuota.split(
                 resolved_limit,
                 supplement_ratio,

@@ -66,6 +66,7 @@ class RetrievalBudget:
 class RetrievalScope:
     collections: tuple[str, ...] = ()
     top_k: int | None = None
+    allow_supplement: bool = True
 
     @property
     def restricted(self) -> bool:

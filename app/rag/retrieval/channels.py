@@ -19,6 +19,7 @@ class VectorRetriever(Protocol):
         limit: int | None = None,
         collections: tuple[str, ...] = (),
         supplement_ratio: float = 0.0,
+        strict_collections: bool = False,
     ) -> list[RetrievedChunk]: ...
 
 
@@ -37,7 +38,11 @@ class VectorSearchChannel:
         options = {"limit": context.scope.top_k or context.budget.recall_budget}
         if context.scope.collections:
             options["collections"] = context.scope.collections
-            options["supplement_ratio"] = self._supplement_ratio
+            options["supplement_ratio"] = (
+                self._supplement_ratio if context.scope.allow_supplement else 0.0
+            )
+            if not context.scope.allow_supplement:
+                options["strict_collections"] = True
         chunks = await self._retriever.retrieve(context.main_question, **options)
         return SearchChannelResult(
             channel_type=self.channel_type,

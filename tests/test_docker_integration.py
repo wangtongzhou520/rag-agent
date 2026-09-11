@@ -1569,3 +1569,12 @@ async def test_worker_ingestion_and_pgvector_retrieval(
     assert fallback_results
     assert fallback_results[0].doc_id == doc_id
     assert expected in fallback_results[0].text
+
+    strict_results = await PgVectorRetrievalEngine(
+        integration_engine, embedding, top_k=1
+    ).retrieve(
+        question,
+        collections=("missing-collection",),
+        strict_collections=True,
+    )
+    assert strict_results == []

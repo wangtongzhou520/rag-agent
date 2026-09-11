@@ -9,6 +9,7 @@ const response: EvalResponse = {
   retrievedContexts: [],
   retrievedScores: [],
   retrievedContextDocIds: [],
+  retrievalCollections: [],
   mcpContext: "",
   hasMcpSuccess: false,
   needsClarification: false,

@@ -40,7 +40,7 @@ async def test_runtime_snapshot_masks_secrets_and_reports_circuit_state() -> Non
     assert qwen_deep["supportsThinking"] is True
     default_embedding = snapshot["ai"]["embedding"]["candidates"][0]
     assert default_embedding["isDefault"] is True
-    assert snapshot["rag"]["search"]["rerankMinScore"] == 0.3
+    assert snapshot["rag"]["search"]["rerankMinScore"] == 0.4
     assert "abcdef1234567890" not in json.dumps(snapshot)
 
 

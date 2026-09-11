@@ -45,7 +45,7 @@ export function EvalPage() {
         <div className="eval-version-stamp">
           <FlaskConical aria-hidden="true" />
           <span>DATASET</span>
-          <strong>rag_quality.v1</strong>
+          <strong>rag_quality.v2</strong>
         </div>
       </header>
 
