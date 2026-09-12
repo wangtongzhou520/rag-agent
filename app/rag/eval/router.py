@@ -5,8 +5,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.framework.result import Results
+from app.rag.eval.judge import EvalAnswerJudge
 from app.rag.eval.reports import EvalReportService
-from app.rag.eval.schemas import EvalReportCreate
+from app.rag.eval.schemas import EvalJudgeRequest, EvalReportCreate
 from app.rag.eval.service import EvalService
 from app.system.auth.deps import require_admin
 from app.system.auth.models import LoginUser
@@ -22,6 +23,10 @@ def _service(request: Request) -> EvalService:
 
 def _reports(request: Request) -> EvalReportService:
     return request.app.state.eval_report_service
+
+
+def _judge(request: Request) -> EvalAnswerJudge:
+    return request.app.state.eval_answer_judge
 
 
 @router.get("/eval")
@@ -65,4 +70,15 @@ async def page_reports(
 @router.get("/eval/reports/{report_id}")
 async def report_detail(report_id: str, request: Request) -> dict:
     result = await _reports(request).detail(report_id)
+    return Results.success(result).model_dump(by_alias=True)
+
+
+@router.post("/eval/judge")
+async def judge_answer(command: EvalJudgeRequest, request: Request) -> dict:
+    result = await _judge(request).judge(
+        command.question,
+        command.reference_answer,
+        command.candidate_answer,
+        command.expected_keywords,
+    )
     return Results.success(result).model_dump(by_alias=True)

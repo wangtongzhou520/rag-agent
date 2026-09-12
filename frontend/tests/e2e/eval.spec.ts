@@ -34,6 +34,8 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
                   contextPrecision: 0.9556,
                   answerKeywordRecall: 1,
                   answerCompleteRate: 1,
+                  semanticScore: 0.96,
+                  semanticPassRate: 1,
                   latencyP95Ms: 3144,
                   thresholdsPassed: true,
                 },
@@ -66,11 +68,21 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
               contextPrecision: 0.9556,
               answerKeywordRecall: 1,
               answerCompleteRate: 1,
+              semanticScore: 0.96,
+              semanticPassRate: 1,
               latencyP95Ms: 3144,
               thresholdsPassed: true,
             },
             thresholds: { minHitRate: 0.8 },
-            cases: [{ id: "leave-01", question: "年假有几天？", passed: true }],
+            cases: [
+              {
+                id: "leave-01",
+                question: "年假有几天？",
+                passed: true,
+                semantic_score: 0.96,
+                semantic_verdict: "PASS",
+              },
+            ],
             createdBy: 1,
             createTime: 1_789_099_200_000,
           }),
@@ -117,7 +129,8 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
   await expect(page.getByText("知识库", { exact: true }).last()).toBeVisible();
   await expect(page.getByRole("heading", { name: "批次评测记录" })).toBeVisible();
   await page.getByRole("button", { name: /阈值校准后/ }).click();
-  await expect(page.getByText("本批次没有失败用例。")).toBeVisible();
+  await expect(page.getByText("96.0%", { exact: true })).toBeVisible();
+  await expect(page.getByText("本批次没有失败或语义风险用例。")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("eval-desktop.png"), fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });

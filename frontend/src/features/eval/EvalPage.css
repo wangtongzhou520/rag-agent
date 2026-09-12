@@ -530,7 +530,7 @@
 }
 .eval-report-answer-metrics {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   border-bottom: 1px solid var(--eval-line);
 }
 .eval-report-answer-metrics > span {
@@ -538,6 +538,12 @@
   border-right: 1px solid var(--border);
 }
 .eval-report-answer-metrics > span:last-child {
+  border-right: 0;
+}
+.eval-report-answer-metrics > span:nth-child(-n + 2) {
+  border-bottom: 1px solid var(--border);
+}
+.eval-report-answer-metrics > span:nth-child(2) {
   border-right: 0;
 }
 .eval-report-cases {

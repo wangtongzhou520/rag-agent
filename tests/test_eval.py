@@ -4,15 +4,18 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 from starlette.routing import NoMatchFound
 
 from app.framework.config import get_settings
 from app.main import create_app
 from app.rag.eval.answer import EvalAnswerGenerator
+from app.rag.eval.judge import EvalAnswerJudge
 from app.rag.eval.router import router
-from app.rag.eval.schemas import EvalReportCreate, EvalResponse
+from app.rag.eval.schemas import EvalJudgeResponse, EvalReportCreate, EvalResponse
 from app.rag.eval.service import EvalService
 from app.rag.intent.node import IntentKind, IntentNode, NodeScore, SubQuestionIntent
 from app.rag.mcp.service import McpEvidence
@@ -69,6 +72,16 @@ class FakeAnswerGenerator:
         return "基于评测上下文的答案"
 
 
+class FakeJudgeLLM:
+    def __init__(self, response: str) -> None:
+        self.response = response
+        self.calls: list[tuple[object, object]] = []
+
+    async def chat(self, request, tier=None) -> str:
+        self.calls.append((request, tier))
+        return self.response
+
+
 def _intent(kind: IntentKind, *, node_id: int = 7) -> SubQuestionIntent:
     node = IntentNode(
         id=node_id,
@@ -93,6 +106,34 @@ async def test_eval_answer_generator_reuses_grounded_prompt_without_memory() -> 
     assert request.messages[-1].content == "年假几天？"
     assert "仅根据资料回答" in request.messages[0].content
     assert '<content ref="1">' in request.messages[0].content
+
+
+async def test_eval_answer_judge_parses_fenced_json_and_uses_standard_tier() -> None:
+    llm = FakeJudgeLLM(
+        '```json\n{"score":0.9,"verdict":"PASS","contradictions":[],"reason":"一致"}\n```'
+    )
+    judge = EvalAnswerJudge(llm)  # type: ignore[arg-type]
+
+    result = await judge.judge("问题", "标准答案", "候选答案", ["事实"])
+
+    assert result == EvalJudgeResponse(
+        score=0.9, verdict="PASS", contradictions=[], reason="一致"
+    )
+    request, tier = llm.calls[0]
+    assert str(tier) == "standard"
+    assert request.temperature == 0  # type: ignore[attr-defined]
+    assert '"referenceAnswer": "标准答案"' in request.messages[-1].content  # type: ignore[attr-defined]
+
+
+async def test_eval_answer_judge_rejects_out_of_range_score() -> None:
+    judge = EvalAnswerJudge(  # type: ignore[arg-type]
+        FakeJudgeLLM(
+            '{"score":1.5,"verdict":"PASS","contradictions":[],"reason":"错误分数"}'
+        )
+    )
+
+    with pytest.raises(ValidationError):
+        await judge.judge("问题", "标准", "候选")
 
 
 async def test_eval_service_deduplicates_chunks_and_preserves_context_doc_slots() -> None:
@@ -234,6 +275,16 @@ async def test_eval_report_router_uses_admin_identity_and_camel_case() -> None:
             return_value={"records": [], "total": 0, "current": 1, "size": 10}
         ),
     )
+    app.state.eval_answer_judge = SimpleNamespace(
+        judge=AsyncMock(
+            return_value=EvalJudgeResponse(
+                score=0.95,
+                verdict="PASS",
+                contradictions=[],
+                reason="事实一致",
+            )
+        )
+    )
     payload = {
         "label": "release-candidate",
         "dataset": "evals/datasets/rag_quality.v2.jsonl",
@@ -248,14 +299,27 @@ async def test_eval_report_router_uses_admin_identity_and_camel_case() -> None:
     ) as client:
         created = await client.post("/rag/eval/reports", json=payload)
         listed = await client.get("/rag/eval/reports", params={"size": 10})
+        judged = await client.post(
+            "/rag/eval/judge",
+            json={
+                "question": "问题",
+                "referenceAnswer": "标准",
+                "candidateAnswer": "候选",
+                "expectedKeywords": ["事实"],
+            },
+        )
 
     assert created.status_code == 200
     assert created.json()["data"]["reportId"] == "report-1"
     assert listed.json()["data"]["records"] == []
+    assert judged.json()["data"]["verdict"] == "PASS"
     command = app.state.eval_report_service.create.await_args.args[0]
     assert isinstance(command, EvalReportCreate)
     assert command.include_answers is True
     assert app.state.eval_report_service.create.await_args.args[1] == 9
+    app.state.eval_answer_judge.judge.assert_awaited_once_with(
+        "问题", "标准", "候选", ["事实"]
+    )
 
 
 def test_eval_route_is_conditionally_registered(monkeypatch) -> None:

@@ -52,6 +52,7 @@ from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
 from app.rag.conversation import ConversationService
 from app.rag.eval.answer import EvalAnswerGenerator
+from app.rag.eval.judge import EvalAnswerJudge
 from app.rag.eval.reports import EvalReportService
 from app.rag.eval.router import router as eval_router
 from app.rag.eval.service import EvalService
@@ -296,6 +297,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             EvalAnswerGenerator(model_runtime.llm, prompt_resolver),
         )
         app.state.eval_report_service = EvalReportService(engine)
+        app.state.eval_answer_judge = EvalAnswerJudge(model_runtime.llm)
     auth_service = AuthService(
         engine, redis_client, settings.auth, settings.redis
     )

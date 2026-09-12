@@ -1,6 +1,6 @@
 """检索评测与批次报告接口契约。"""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -38,3 +38,21 @@ class EvalReportCreate(BaseModel):
     thresholds: dict[str, Any]
     summary: dict[str, Any]
     cases: list[dict[str, Any]] = Field(max_length=1000)
+
+
+class EvalJudgeRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    question: str = Field(min_length=1, max_length=1000)
+    reference_answer: str = Field(alias="referenceAnswer", min_length=1, max_length=8000)
+    candidate_answer: str = Field(alias="candidateAnswer", max_length=8000)
+    expected_keywords: list[str] = Field(
+        default_factory=list, alias="expectedKeywords", max_length=100
+    )
+
+
+class EvalJudgeResponse(BaseModel):
+    score: float = Field(ge=0, le=1)
+    verdict: Literal["PASS", "PARTIAL", "FAIL"]
+    contradictions: list[str] = Field(default_factory=list, max_length=20)
+    reason: str = Field(min_length=1, max_length=1000)

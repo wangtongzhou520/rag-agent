@@ -1,12 +1,16 @@
 """质量回归数据集加载和指标计算。"""
 
+import asyncio
+from dataclasses import replace
 from pathlib import Path
 
+import httpx
 import pytest
 
 from scripts.evaluate_rag import (
     EvalCase,
     load_dataset,
+    run_case,
     score_case,
     summarize,
     thresholds_pass,
@@ -171,3 +175,88 @@ def test_quality_gate_can_require_answer_metrics() -> None:
     assert thresholds_pass(
         {**summary, "answerCompleteRate": 0.79}, **limits
     ) is False
+
+
+def test_semantic_judge_metrics_are_optional_and_gateable() -> None:
+    base = score_case(
+        EvalCase(id="semantic", question="Q", referenceDocIds=["doc"]),
+        {
+            "retrievedDocIds": ["doc"],
+            "retrievedContextDocIds": ["doc"],
+            "latencyMs": 20,
+        },
+    )
+    results = [
+        replace(base, semantic_score=0.95, semantic_verdict="PASS"),
+        replace(base, id="partial", semantic_score=0.65, semantic_verdict="PARTIAL"),
+    ]
+
+    summary = summarize(results)
+
+    assert summary["semanticScore"] == 0.8
+    assert summary["semanticPassRate"] == 0.5
+    limits = {
+        "min_hit_rate": 0.8,
+        "min_mrr": 0.7,
+        "min_context_precision": 0.75,
+        "max_latency_p95_ms": 5000,
+    }
+    assert thresholds_pass(summary, **limits) is True
+    assert thresholds_pass(summary, **limits, min_semantic_score=0.8) is True
+    assert thresholds_pass(summary, **limits, min_semantic_score=0.81) is False
+
+
+async def test_run_case_can_collect_semantic_judge_result() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/judge"):
+            return httpx.Response(
+                200,
+                json={
+                    "code": "0",
+                    "message": "ok",
+                    "data": {
+                        "score": 0.92,
+                        "verdict": "PASS",
+                        "contradictions": [],
+                        "reason": "事实一致",
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "code": "0",
+                "message": "ok",
+                "data": {
+                    "retrievedDocIds": ["doc"],
+                    "retrievedContextDocIds": ["doc"],
+                    "retrievedScores": [0.9],
+                    "answer": "标准答案",
+                    "answerLatencyMs": 100,
+                    "latencyMs": 20,
+                },
+            },
+        )
+
+    case = EvalCase(
+        id="judge",
+        question="问题",
+        referenceDocIds=["doc"],
+        referenceAnswer="标准答案",
+        expectedKeywords=["标准答案"],
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://test"
+    ) as client:
+        result = await run_case(
+            client,
+            case,
+            asyncio.Semaphore(1),
+            ["baseline"],
+            include_answer=True,
+            judge_answers=True,
+        )
+
+    assert result.error is None
+    assert result.semantic_score == 0.92
+    assert result.semantic_verdict == "PASS"

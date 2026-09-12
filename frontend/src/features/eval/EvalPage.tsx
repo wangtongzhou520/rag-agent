@@ -252,22 +252,28 @@ export function EvalPage() {
                       label="完整答案率"
                       value={percentage(reportQuery.data.summary.answerCompleteRate)}
                     />
+                    <ReportMetric
+                      label="语义正确性"
+                      value={percentage(reportQuery.data.summary.semanticScore)}
+                    />
                   </div>
                   <div className="eval-report-cases">
-                    <span>FAILED CASES</span>
-                    {reportQuery.data.cases.filter((item) => !item.passed).length ? (
+                    <span>FLAGGED CASES</span>
+                    {reportQuery.data.cases.filter(isFlaggedCase).length ? (
                       reportQuery.data.cases
-                        .filter((item) => !item.passed)
+                        .filter(isFlaggedCase)
                         .slice(0, 5)
                         .map((item) => (
                           <div key={item.id}>
                             <code>{item.id}</code>
                             <p>{item.question || "未记录问题"}</p>
-                            <small>{item.error || "指标未达到当前门槛"}</small>
+                            <small>
+                              {item.error || item.semantic_reason || "指标未达到当前门槛"}
+                            </small>
                           </div>
                         ))
                     ) : (
-                      <p className="eval-report-all-pass">本批次没有失败用例。</p>
+                      <p className="eval-report-all-pass">本批次没有失败或语义风险用例。</p>
                     )}
                   </div>
                 </>
@@ -474,6 +480,13 @@ function metricDelta(
   const currentValue = current.summary[key];
   const previousValue = previous?.summary[key];
   return currentValue == null || previousValue == null ? null : currentValue - previousValue;
+}
+
+function isFlaggedCase(item: {
+  passed?: boolean;
+  semantic_verdict?: "PASS" | "PARTIAL" | "FAIL" | null;
+}) {
+  return !item.passed || item.semantic_verdict === "PARTIAL" || item.semantic_verdict === "FAIL";
 }
 
 function Metric({

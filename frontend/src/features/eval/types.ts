@@ -27,6 +27,8 @@ export interface EvalReportSummaryMetrics {
   answerCompleteRate?: number | null;
   latencyP95Ms?: number;
   answerLatencyP95Ms?: number | null;
+  semanticScore?: number | null;
+  semanticPassRate?: number | null;
   thresholdsPassed?: boolean;
 }
 
@@ -50,6 +52,10 @@ export interface EvalReportCase {
   reciprocal_rank?: number;
   context_precision?: number;
   answer_keyword_recall?: number | null;
+  semantic_score?: number | null;
+  semantic_verdict?: "PASS" | "PARTIAL" | "FAIL" | null;
+  semantic_reason?: string | null;
+  semantic_contradictions?: string[] | null;
 }
 
 export interface EvalReportDetail extends EvalReportSummary {

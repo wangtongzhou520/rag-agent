@@ -8,7 +8,7 @@ import os
 import statistics
 import sys
 import unicodedata
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +50,10 @@ class CaseResult:
     retrieved_doc_ids: list[str]
     retrieved_context_doc_ids: list[str | None]
     retrieved_scores: list[float]
+    semantic_score: float | None = None
+    semantic_verdict: str | None = None
+    semantic_reason: str | None = None
+    semantic_contradictions: list[str] | None = None
     error: str | None = None
 
 
@@ -165,6 +169,16 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
         for result in valid
         if result.answer_latency_ms is not None
     )
+    semantic_scores = [
+        result.semantic_score
+        for result in valid
+        if result.semantic_score is not None
+    ]
+    semantic_verdicts = [
+        result.semantic_verdict
+        for result in valid
+        if result.semantic_verdict is not None
+    ]
     p95_index = max(0, min(len(latencies) - 1, math.ceil(len(latencies) * 0.95) - 1))
     mean = lambda values: round(statistics.fmean(values), 4) if values else 0.0
     return {
@@ -208,6 +222,12 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
             if answer_latencies
             else None
         ),
+        "semanticScore": mean(semantic_scores) if semantic_scores else None,
+        "semanticPassRate": (
+            round(semantic_verdicts.count("PASS") / len(semantic_verdicts), 4)
+            if semantic_verdicts
+            else None
+        ),
     }
 
 
@@ -220,6 +240,7 @@ def thresholds_pass(
     max_latency_p95_ms: int,
     min_answer_keyword_recall: float | None = None,
     min_answer_complete_rate: float | None = None,
+    min_semantic_score: float | None = None,
 ) -> bool:
     return bool(
         summary["errors"] == 0
@@ -241,6 +262,13 @@ def thresholds_pass(
                 and summary["answerCompleteRate"] >= min_answer_complete_rate
             )
         )
+        and (
+            min_semantic_score is None
+            or (
+                summary["semanticScore"] is not None
+                and summary["semanticScore"] >= min_semantic_score
+            )
+        )
     )
 
 
@@ -250,6 +278,7 @@ async def run_case(
     semaphore: asyncio.Semaphore,
     collections: list[str],
     include_answer: bool,
+    judge_answers: bool,
 ) -> CaseResult:
     try:
         async with semaphore:
@@ -262,7 +291,40 @@ async def run_case(
         payload = response.json()
         if str(payload.get("code")) != "0" or not isinstance(payload.get("data"), dict):
             raise ValueError(payload.get("message") or "invalid Result payload")
-        return score_case(case, payload["data"])
+        result = score_case(case, payload["data"])
+        if judge_answers:
+            try:
+                async with semaphore:
+                    judge_response = await client.post(
+                        "/rag/eval/judge",
+                        json={
+                            "question": case.question,
+                            "referenceAnswer": case.reference_answer,
+                            "candidateAnswer": result.answer,
+                            "expectedKeywords": case.expected_keywords,
+                        },
+                    )
+                judge_response.raise_for_status()
+                judge_payload = judge_response.json()
+                judge_data = judge_payload.get("data")
+                if str(judge_payload.get("code")) != "0" or not isinstance(
+                    judge_data, dict
+                ):
+                    raise ValueError(
+                        judge_payload.get("message") or "invalid judge response"
+                    )
+                result = replace(
+                    result,
+                    semantic_score=round(float(judge_data["score"]), 4),
+                    semantic_verdict=str(judge_data["verdict"]),
+                    semantic_reason=str(judge_data["reason"]),
+                    semantic_contradictions=[
+                        str(value) for value in judge_data.get("contradictions") or []
+                    ],
+                )
+            except Exception as exc:  # noqa: BLE001 - 裁判错误必须使该题显式失败
+                return replace(result, passed=False, error=f"judge: {exc}")
+        return result
     except Exception as exc:  # noqa: BLE001 - 每条失败必须留在批次报告中
         return CaseResult(
             id=case.id,
@@ -305,6 +367,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                     semaphore,
                     args.collection,
                     args.with_answers,
+                    args.judge_answers,
                 )
                 for case in cases
             )
@@ -322,6 +385,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         min_answer_complete_rate=(
             args.min_answer_complete_rate if args.with_answers else None
         ),
+        min_semantic_score=args.min_semantic_score if args.judge_answers else None,
     )
     payload = {
         "dataset": str(args.dataset),
@@ -339,6 +403,9 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "minAnswerCompleteRate": (
                 args.min_answer_complete_rate if args.with_answers else None
+            ),
+            "minSemanticScore": (
+                args.min_semantic_score if args.judge_answers else None
             ),
         },
         "summary": summary,
@@ -381,12 +448,22 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="generate grounded answers and enable answer quality gates",
     )
+    parser.add_argument(
+        "--judge-answers",
+        action="store_true",
+        help="generate answers and ask the model judge for semantic correctness",
+    )
     parser.add_argument("--min-hit-rate", type=float, default=0.8)
     parser.add_argument("--min-mrr", type=float, default=0.7)
     parser.add_argument("--min-context-precision", type=float, default=0.75)
     parser.add_argument("--max-latency-p95-ms", type=int, default=5000)
     parser.add_argument("--min-answer-keyword-recall", type=float, default=0.9)
     parser.add_argument("--min-answer-complete-rate", type=float, default=0.8)
+    parser.add_argument(
+        "--min-semantic-score",
+        type=float,
+        help="optional semantic-score gate; omitted means observation only",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--publish-report",
@@ -397,6 +474,10 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.collection is None:
         args.collection = ["m5_quality_baseline"]
+    if args.min_semantic_score is not None:
+        args.judge_answers = True
+    if args.judge_answers:
+        args.with_answers = True
     return args
 
 
@@ -412,6 +493,11 @@ def main() -> None:
             args.min_context_precision,
             args.min_answer_keyword_recall,
             args.min_answer_complete_rate,
+            *(
+                [args.min_semantic_score]
+                if args.min_semantic_score is not None
+                else []
+            ),
         )
     ):
         raise SystemExit("thresholds must be between zero and one")
