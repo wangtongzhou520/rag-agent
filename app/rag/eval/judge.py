@@ -35,6 +35,13 @@ class EvalAnswerJudge:
         expected_keywords: Sequence[str] = (),
         contexts: Sequence[str] = (),
     ) -> EvalJudgeResponse:
+        if not candidate_answer.strip():
+            return EvalJudgeResponse(
+                score=0,
+                verdict="FAIL",
+                contradictions=["候选答案为空"],
+                reason="候选答案没有提供可评估内容。",
+            )
         payload = json.dumps(
             {
                 "question": question,

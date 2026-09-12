@@ -21,6 +21,7 @@ class EvalCase(BaseModel):
 
     id: str
     question: str
+    answerable: bool = True
     reference_doc_ids: list[str] = Field(alias="referenceDocIds")
     reference_answer: str = Field(default="", alias="referenceAnswer")
     expected_keywords: list[str] = Field(default_factory=list, alias="expectedKeywords")
@@ -54,6 +55,9 @@ class CaseResult:
     semantic_verdict: str | None = None
     semantic_reason: str | None = None
     semantic_contradictions: list[str] | None = None
+    answerable: bool = True
+    abstained: bool | None = None
+    no_evidence: bool | None = None
     error: str | None = None
 
 
@@ -67,8 +71,13 @@ def load_dataset(path: Path) -> list[EvalCase]:
         case = EvalCase.model_validate_json(line)
         if case.id in seen:
             raise ValueError(f"duplicate case id at line {line_number}: {case.id}")
-        if not case.question.strip() or not case.reference_doc_ids:
-            raise ValueError(f"invalid case at line {line_number}: question/docs required")
+        if not case.question.strip():
+            raise ValueError(f"invalid case at line {line_number}: question required")
+        if case.answerable != bool(case.reference_doc_ids):
+            raise ValueError(
+                f"invalid case at line {line_number}: answerable cases require docs "
+                "and unanswerable cases must not declare docs"
+            )
         seen.add(case.id)
         cases.append(case)
     if not cases:
@@ -96,10 +105,24 @@ def score_case(case: EvalCase, response: dict[str, Any]) -> CaseResult:
     context_docs = response.get("retrievedContextDocIds") or []
     expected = set(case.reference_doc_ids)
     matching = expected.intersection(retrieved)
-    first_rank = next(
-        (index for index, value in enumerate(retrieved, 1) if value in expected), None
-    )
-    relevant_contexts = sum(value in expected for value in context_docs if value)
+    if case.answerable:
+        first_rank = next(
+            (index for index, value in enumerate(retrieved, 1) if value in expected),
+            None,
+        )
+        relevant_contexts = sum(value in expected for value in context_docs if value)
+        doc_hit = float(bool(matching))
+        doc_recall = len(matching) / len(expected)
+        reciprocal_rank = 1 / first_rank if first_rank else 0.0
+        context_precision = (
+            relevant_contexts / len(context_docs) if context_docs else 0.0
+        )
+    else:
+        has_evidence = bool(retrieved or context_docs)
+        doc_hit = 1.0
+        doc_recall = 1.0
+        reciprocal_rank = 1.0
+        context_precision = 1.0
     expected_intents = case.intent_leaf_ids
     actual_intents = response.get("intentLeafIds") or []
     intent_accuracy = None
@@ -112,12 +135,14 @@ def score_case(case: EvalCase, response: dict[str, Any]) -> CaseResult:
         )
         comparable = sum(value is not None for value in expected_intents)
         intent_accuracy = matched / comparable if comparable else None
-    doc_recall = len(matching) / len(expected)
     answer_value = response.get("answer")
     answer = str(answer_value) if answer_value is not None else None
+    abstained = is_abstention(answer) if answer is not None else None
     answer_keyword_recall = None
     answer_complete = None
-    if answer is not None and case.expected_keywords:
+    if answer is not None and not case.answerable:
+        answer_complete = float(bool(abstained))
+    elif answer is not None and case.expected_keywords:
         normalized_answer = normalize_fact_text(answer)
         matched_keywords = sum(
             any(
@@ -136,13 +161,11 @@ def score_case(case: EvalCase, response: dict[str, Any]) -> CaseResult:
         question=case.question,
         reference_answer=case.reference_answer,
         expected_keywords=case.expected_keywords,
-        passed=bool(matching) and answer_complete != 0,
-        doc_hit=float(bool(matching)),
+        passed=(bool(matching) if case.answerable else True) and answer_complete != 0,
+        doc_hit=doc_hit,
         doc_recall=round(doc_recall, 4),
-        reciprocal_rank=round(1 / first_rank if first_rank else 0.0, 4),
-        context_precision=round(
-            relevant_contexts / len(context_docs) if context_docs else 0.0, 4
-        ),
+        reciprocal_rank=round(reciprocal_rank, 4),
+        context_precision=round(context_precision, 4),
         intent_accuracy=round(intent_accuracy, 4)
         if intent_accuracy is not None
         else None,
@@ -162,6 +185,9 @@ def score_case(case: EvalCase, response: dict[str, Any]) -> CaseResult:
         retrieved_scores=[
             round(float(value), 6) for value in response.get("retrievedScores") or []
         ],
+        answerable=case.answerable,
+        abstained=abstained,
+        no_evidence=not has_evidence if not case.answerable else None,
     )
 
 
@@ -169,6 +195,51 @@ def normalize_fact_text(value: str) -> str:
     """统一全半角、大小写并去掉标点空白，降低格式差异对事实匹配的影响。"""
     normalized = unicodedata.normalize("NFKC", value).casefold()
     return "".join(character for character in normalized if character.isalnum())
+
+
+def is_abstention(answer: str) -> bool:
+    """识别明确的资料不足声明，避免把普通否定答案当作拒答。"""
+    normalized = normalize_fact_text(answer)
+    unsupported_conclusions = (
+        "因此不能",
+        "所以不能",
+        "因此可以",
+        "所以可以",
+        "因此不允许",
+        "所以不允许",
+        "因此禁止",
+        "所以禁止",
+    )
+    if any(
+        normalize_fact_text(phrase) in normalized
+        for phrase in unsupported_conclusions
+    ):
+        return False
+    phrases = (
+        "无法根据现有资料",
+        "无法根据提供的资料",
+        "无法从现有资料",
+        "现有资料未说明",
+        "提供的资料未说明",
+        "资料中没有说明",
+        "资料中未提及",
+        "未说明",
+        "未提及",
+        "未明确",
+        "没有足够的信息",
+        "信息不足",
+        "无法确定",
+        "不能确定",
+        "无法确认",
+        "未找到相关信息",
+        "资料未提及",
+        "未提供",
+        "未指定",
+        "未包含",
+        "没有明确规定",
+        "没有相关规定",
+    )
+    return any(normalize_fact_text(phrase) in normalized for phrase in phrases)
 
 
 def summarize(results: list[CaseResult]) -> dict[str, Any]:
@@ -194,6 +265,12 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
         for result in valid
         if result.semantic_verdict is not None
     ]
+    unanswerable = [result for result in valid if not result.answerable]
+    abstention_values = [
+        float(result.abstained)
+        for result in unanswerable
+        if result.abstained is not None
+    ]
     p95_index = max(0, min(len(latencies) - 1, math.ceil(len(latencies) * 0.95) - 1))
     mean = lambda values: round(statistics.fmean(values), 4) if values else 0.0
     return {
@@ -218,10 +295,13 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
             [
                 result.answer_complete
                 for result in valid
-                if result.answer_complete is not None
+                if result.answerable and result.answer_complete is not None
             ]
         )
-        if any(result.answer_complete is not None for result in valid)
+        if any(
+            result.answerable and result.answer_complete is not None
+            for result in valid
+        )
         else None,
         "latencyP95Ms": latencies[p95_index] if latencies else 0,
         "answerLatencyP95Ms": (
@@ -243,6 +323,20 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
             if semantic_verdicts
             else None
         ),
+        "unanswerableAbstentionRate": (
+            mean(abstention_values) if abstention_values else None
+        ),
+        "unanswerableNoEvidenceRate": (
+            mean(
+                [
+                    float(result.no_evidence)
+                    for result in unanswerable
+                    if result.no_evidence is not None
+                ]
+            )
+            if unanswerable
+            else None
+        ),
     }
 
 
@@ -256,6 +350,7 @@ def thresholds_pass(
     min_answer_keyword_recall: float | None = None,
     min_answer_complete_rate: float | None = None,
     min_semantic_score: float | None = None,
+    min_unanswerable_abstention_rate: float | None = None,
 ) -> bool:
     return bool(
         summary["errors"] == 0
@@ -282,6 +377,14 @@ def thresholds_pass(
             or (
                 summary["semanticScore"] is not None
                 and summary["semanticScore"] >= min_semantic_score
+            )
+        )
+        and (
+            min_unanswerable_abstention_rate is None
+            or (
+                summary["unanswerableAbstentionRate"] is not None
+                and summary["unanswerableAbstentionRate"]
+                >= min_unanswerable_abstention_rate
             )
         )
     )
@@ -362,6 +465,7 @@ async def run_case(
             retrieved_doc_ids=[],
             retrieved_context_doc_ids=[],
             retrieved_scores=[],
+            answerable=case.answerable,
             error=str(exc),
         )
 
@@ -397,12 +501,22 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         min_context_precision=args.min_context_precision,
         max_latency_p95_ms=args.max_latency_p95_ms,
         min_answer_keyword_recall=(
-            args.min_answer_keyword_recall if args.with_answers else None
+            args.min_answer_keyword_recall
+            if args.with_answers and summary["answerKeywordRecall"] is not None
+            else None
         ),
         min_answer_complete_rate=(
-            args.min_answer_complete_rate if args.with_answers else None
+            args.min_answer_complete_rate
+            if args.with_answers and summary["answerCompleteRate"] is not None
+            else None
         ),
         min_semantic_score=args.min_semantic_score if args.judge_answers else None,
+        min_unanswerable_abstention_rate=(
+            args.min_unanswerable_abstention_rate
+            if args.with_answers
+            and summary["unanswerableAbstentionRate"] is not None
+            else None
+        ),
     )
     payload = {
         "dataset": str(args.dataset),
@@ -416,13 +530,23 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             "minContextPrecision": args.min_context_precision,
             "maxLatencyP95Ms": args.max_latency_p95_ms,
             "minAnswerKeywordRecall": (
-                args.min_answer_keyword_recall if args.with_answers else None
+                args.min_answer_keyword_recall
+                if args.with_answers and summary["answerKeywordRecall"] is not None
+                else None
             ),
             "minAnswerCompleteRate": (
-                args.min_answer_complete_rate if args.with_answers else None
+                args.min_answer_complete_rate
+                if args.with_answers and summary["answerCompleteRate"] is not None
+                else None
             ),
             "minSemanticScore": (
                 args.min_semantic_score if args.judge_answers else None
+            ),
+            "minUnanswerableAbstentionRate": (
+                args.min_unanswerable_abstention_rate
+                if args.with_answers
+                and summary["unanswerableAbstentionRate"] is not None
+                else None
             ),
         },
         "summary": summary,
@@ -492,6 +616,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         help="optional semantic-score gate; omitted means observation only",
     )
+    parser.add_argument(
+        "--min-unanswerable-abstention-rate",
+        type=float,
+        default=0.8,
+        help="minimum refusal rate for unanswerable cases when answers are enabled",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--publish-report",
@@ -525,6 +655,7 @@ def main() -> None:
             args.min_context_precision,
             args.min_answer_keyword_recall,
             args.min_answer_complete_rate,
+            args.min_unanswerable_abstention_rate,
             *(
                 [args.min_semantic_score]
                 if args.min_semantic_score is not None

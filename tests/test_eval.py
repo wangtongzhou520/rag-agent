@@ -105,7 +105,21 @@ async def test_eval_answer_generator_reuses_grounded_prompt_without_memory() -> 
     request = llm.chat.await_args.args[0]
     assert request.messages[-1].content == "年假几天？"
     assert "仅根据资料回答" in request.messages[0].content
+    assert "不得把‘未提及’推断为允许、禁止" in request.messages[0].content
     assert '<content ref="1">' in request.messages[0].content
+
+
+async def test_eval_answer_generator_explicitly_abstains_without_chunks() -> None:
+    llm = SimpleNamespace(chat=AsyncMock())
+    prompt_resolver = SimpleNamespace(resolve=AsyncMock())
+    generator = EvalAnswerGenerator(llm, prompt_resolver)  # type: ignore[arg-type]
+
+    answer = await generator.generate("未知问题？", [])
+
+    assert "现有资料未提供" in answer
+    assert "无法确定" in answer
+    llm.chat.assert_not_awaited()
+    prompt_resolver.resolve.assert_not_awaited()
 
 
 async def test_eval_answer_judge_parses_fenced_json_and_uses_standard_tier() -> None:
@@ -126,6 +140,18 @@ async def test_eval_answer_judge_parses_fenced_json_and_uses_standard_tier() -> 
     assert request.temperature == 0  # type: ignore[attr-defined]
     assert '"referenceAnswer": "标准答案"' in request.messages[-1].content  # type: ignore[attr-defined]
     assert '"contexts": ["检索依据"]' in request.messages[-1].content  # type: ignore[attr-defined]
+
+
+async def test_eval_answer_judge_rejects_empty_candidate_without_model_call() -> None:
+    llm = FakeJudgeLLM("unused")
+    judge = EvalAnswerJudge(llm)  # type: ignore[arg-type]
+
+    result = await judge.judge("问题", "标准答案", "   ")
+
+    assert result.verdict == "FAIL"
+    assert result.score == 0
+    assert result.contradictions == ["候选答案为空"]
+    assert llm.calls == []
 
 
 async def test_eval_answer_judge_rejects_out_of_range_score() -> None:
@@ -217,6 +243,24 @@ async def test_eval_service_generates_answer_without_conversation_side_effects()
     assert result.answer == "基于评测上下文的答案"
     assert result.answer_latency_ms is not None
     assert generator.calls == [("问题", [chunk])]
+
+
+async def test_eval_service_lets_generator_abstain_without_chunks() -> None:
+    generator = FakeAnswerGenerator()
+    service = EvalService(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        FakeRewriter(),
+        FakeIntentResolver([_intent(IntentKind.KB)]),  # type: ignore[arg-type]
+        FakeRetriever([]),
+        RetrievalScopeResolver(),
+        FakeMcpDispatcher(),  # type: ignore[arg-type]
+        generator,  # type: ignore[arg-type]
+    )
+
+    result = await service.evaluate("未知问题", include_answer=True)
+
+    assert result.answer == "基于评测上下文的答案"
+    assert generator.calls == [("未知问题", [])]
 
 
 async def test_eval_router_returns_camel_case_contract() -> None:

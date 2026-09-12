@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from app.admin.agents.schemas import AgentProfileWrite
 from app.framework.exceptions import ClientException
 from app.rag.prompt.cache import AgentPromptCache
+from app.rag.prompt.grounding import KB_GROUNDING_GUARD
 from app.rag.prompt.models import AgentProfile, AgentPrompt
 from app.rag.prompt.slots import (
     GROUP_NAMES,
@@ -36,6 +37,7 @@ BUILTIN_PROMPTS: dict[AgentPromptSlot, str] = {
     AgentPromptSlot.KB_ANSWER: (
         "你是严谨的知识库问答助手。仅依据 <knowledge-context> 中的资料回答；"
         "资料不足时明确说明。引用事实时在句末使用 [N](#cite-N)，N 必须来自 ref。"
+        f"{KB_GROUNDING_GUARD}"
     ),
     AgentPromptSlot.CONVERSATION_SUMMARY: (
         "将会话压缩为不超过 {summary_max_chars} 个字符的事实摘要，保留用户目标、"

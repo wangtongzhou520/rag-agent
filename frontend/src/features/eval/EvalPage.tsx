@@ -66,7 +66,7 @@ export function EvalPage() {
         <div className="eval-version-stamp">
           <FlaskConical aria-hidden="true" />
           <span>DATASET</span>
-          <strong>rag_quality.v2</strong>
+          <strong>rag_quality.v3</strong>
         </div>
       </header>
 
@@ -192,7 +192,14 @@ export function EvalPage() {
                     <strong>{report.label || datasetName(report.dataset)}</strong>
                     <small>{formatTraceTime(report.createTime)}</small>
                   </div>
-                  <ReportMetric label="命中率" value={percentage(report.summary.docHitRate)} />
+                  <ReportMetric
+                    label={
+                      report.summary.unanswerableAbstentionRate != null ? "拒答率" : "命中率"
+                    }
+                    value={percentage(
+                      report.summary.unanswerableAbstentionRate ?? report.summary.docHitRate,
+                    )}
+                  />
                   <ReportMetric
                     label="上下文精度"
                     value={percentage(report.summary.contextPrecision)}
@@ -243,19 +250,44 @@ export function EvalPage() {
                     <code>{reportQuery.data.reportId.slice(0, 8)}</code>
                   </header>
                   <div className="eval-report-answer-metrics">
-                    <ReportMetric label="MRR" value={decimal(reportQuery.data.summary.mrr)} />
-                    <ReportMetric
-                      label="答案事实覆盖"
-                      value={percentage(reportQuery.data.summary.answerKeywordRecall)}
-                    />
-                    <ReportMetric
-                      label="完整答案率"
-                      value={percentage(reportQuery.data.summary.answerCompleteRate)}
-                    />
-                    <ReportMetric
-                      label="语义正确性"
-                      value={percentage(reportQuery.data.summary.semanticScore)}
-                    />
+                    {reportQuery.data.summary.unanswerableAbstentionRate != null ? (
+                      <>
+                        <ReportMetric
+                          label="无证据率"
+                          value={percentage(reportQuery.data.summary.unanswerableNoEvidenceRate)}
+                        />
+                        <ReportMetric
+                          label="正确拒答率"
+                          value={percentage(reportQuery.data.summary.unanswerableAbstentionRate)}
+                        />
+                        <ReportMetric
+                          label="语义正确性"
+                          value={percentage(reportQuery.data.summary.semanticScore)}
+                        />
+                        <ReportMetric
+                          label="回答 P95"
+                          value={formatEvalLatency(
+                            reportQuery.data.summary.answerLatencyP95Ms ?? 0,
+                          )}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <ReportMetric label="MRR" value={decimal(reportQuery.data.summary.mrr)} />
+                        <ReportMetric
+                          label="答案事实覆盖"
+                          value={percentage(reportQuery.data.summary.answerKeywordRecall)}
+                        />
+                        <ReportMetric
+                          label="完整答案率"
+                          value={percentage(reportQuery.data.summary.answerCompleteRate)}
+                        />
+                        <ReportMetric
+                          label="语义正确性"
+                          value={percentage(reportQuery.data.summary.semanticScore)}
+                        />
+                      </>
+                    )}
                   </div>
                   <div className="eval-report-cases">
                     <span>FLAGGED CASES</span>

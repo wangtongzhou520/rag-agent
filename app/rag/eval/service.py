@@ -114,7 +114,7 @@ class EvalService:
         answer_latency_ms: int | None = None
         if include_answer:
             answer_started = perf_counter()
-            if chunks and self._answer_generator is not None:
+            if self._answer_generator is not None:
                 answer = await self._answer_generator.generate(question, chunks)
             else:
                 answer = ""

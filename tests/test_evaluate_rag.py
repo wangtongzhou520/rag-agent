@@ -9,6 +9,7 @@ import pytest
 
 from scripts.evaluate_rag import (
     EvalCase,
+    is_abstention,
     load_dataset,
     run_case,
     score_case,
@@ -67,6 +68,32 @@ def test_duplicate_dataset_ids_are_rejected(tmp_path: Path) -> None:
         load_dataset(dataset)
 
 
+def test_unanswerable_dataset_allows_empty_reference_docs(tmp_path: Path) -> None:
+    dataset = tmp_path / "unanswerable.jsonl"
+    dataset.write_text(
+        '{"id":"unknown","question":"Q","answerable":false,'
+        '"referenceDocIds":[],"referenceAnswer":"资料未说明"}\n',
+        encoding="utf-8",
+    )
+
+    cases = load_dataset(dataset)
+
+    assert cases[0].answerable is False
+    assert cases[0].reference_doc_ids == []
+
+
+def test_dataset_rejects_answerability_doc_mismatch(tmp_path: Path) -> None:
+    dataset = tmp_path / "invalid.jsonl"
+    dataset.write_text(
+        '{"id":"unknown","question":"Q","answerable":false,'
+        '"referenceDocIds":["doc"]}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unanswerable cases must not declare docs"):
+        load_dataset(dataset)
+
+
 def test_score_case_calculates_retrieval_and_intent_metrics() -> None:
     case = EvalCase(
         id="one",
@@ -119,6 +146,69 @@ def test_score_case_normalizes_and_scores_answer_facts() -> None:
     assert summary["answerKeywordRecall"] == 1
     assert summary["answerCompleteRate"] == 1
     assert summary["answerLatencyP95Ms"] == 321
+
+
+def test_score_case_rewards_grounded_abstention_without_evidence() -> None:
+    case = EvalCase(
+        id="unknown",
+        question="Q",
+        answerable=False,
+        referenceDocIds=[],
+        referenceAnswer="现有资料未说明。",
+    )
+
+    result = score_case(
+        case,
+        {
+            "retrievedDocIds": [],
+            "retrievedContextDocIds": [],
+            "answer": "现有资料未说明该事项，无法确定。",
+        },
+    )
+
+    assert result.passed is True
+    assert result.doc_hit == 1
+    assert result.abstained is True
+    assert result.answer_complete == 1
+    summary = summarize([result])
+    assert summary["answerCompleteRate"] is None
+    assert summary["unanswerableAbstentionRate"] == 1
+    assert summary["unanswerableNoEvidenceRate"] == 1
+
+
+def test_score_case_flags_irrelevant_evidence_and_unsupported_answer() -> None:
+    case = EvalCase(
+        id="unknown",
+        question="Q",
+        answerable=False,
+        referenceDocIds=[],
+    )
+
+    result = score_case(
+        case,
+        {
+            "retrievedDocIds": ["unrelated"],
+            "retrievedContextDocIds": ["unrelated"],
+            "answer": "答案是 10 天。",
+        },
+    )
+
+    assert result.passed is False
+    assert result.doc_hit == 1
+    assert result.context_precision == 1
+    assert result.no_evidence is False
+    assert result.abstained is False
+    assert result.answer_complete == 0
+
+
+def test_abstention_detection_does_not_confuse_boundary_negation() -> None:
+    assert is_abstention("提供的资料未说明海外住宿标准。") is True
+    assert is_abstention("资料未指定必须使用哪一种沟通工具。") is True
+    assert is_abstention("无法确认试用期员工是否适用不同额度。") is True
+    assert is_abstention("当前资料未包含客户赔偿比例信息。") is True
+    assert is_abstention("资料中未说明工具，现有资料未明确。") is True
+    assert is_abstention("资料未提及折现，因此不能折现。") is False
+    assert is_abstention("正好 5000 元不需要财务负责人复核。") is False
 
 
 def test_summarize_keeps_errors_out_of_metric_denominators() -> None:
@@ -235,6 +325,36 @@ def test_semantic_judge_metrics_are_optional_and_gateable() -> None:
     assert thresholds_pass(summary, **limits) is True
     assert thresholds_pass(summary, **limits, min_semantic_score=0.8) is True
     assert thresholds_pass(summary, **limits, min_semantic_score=0.81) is False
+
+
+def test_quality_gate_can_require_unanswerable_abstention() -> None:
+    summary = {
+        "errors": 0,
+        "docHitRate": 1.0,
+        "mrr": 1.0,
+        "contextPrecision": 1.0,
+        "latencyP95Ms": 1200,
+        "unanswerableAbstentionRate": 0.875,
+    }
+    limits = {
+        "min_hit_rate": 0.8,
+        "min_mrr": 0.7,
+        "min_context_precision": 0.75,
+        "max_latency_p95_ms": 5000,
+    }
+
+    assert (
+        thresholds_pass(
+            summary, **limits, min_unanswerable_abstention_rate=0.8
+        )
+        is True
+    )
+    assert (
+        thresholds_pass(
+            summary, **limits, min_unanswerable_abstention_rate=0.9
+        )
+        is False
+    )
 
 
 async def test_run_case_can_collect_semantic_judge_result() -> None:
