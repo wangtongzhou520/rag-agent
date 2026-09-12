@@ -15,7 +15,7 @@
   padding: 4px;
   width: fit-content;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 8px;
   background: white;
 }
 .ingestion-view-tabs button {
@@ -25,7 +25,7 @@
   gap: 7px;
   padding: 0 14px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-secondary);
   background: transparent;
   font-size: 12px;
@@ -53,7 +53,7 @@
 .pipeline-card {
   padding: 20px 22px 16px;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: 8px;
   background: white;
   box-shadow: 0 1px 2px rgb(16 42 86 / 3%);
 }
@@ -96,7 +96,7 @@
   height: 31px;
   place-items: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
@@ -162,7 +162,7 @@
 .pipeline-task-panel {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: 8px;
   background: white;
 }
 .pipeline-task-filter {
@@ -184,7 +184,7 @@
   height: 36px;
   padding: 0 32px 0 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 8px;
   outline: none;
   color: var(--text-primary);
   background: white;
@@ -241,7 +241,7 @@
   height: 31px;
   place-items: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--blue-700);
   background: var(--blue-50);
   cursor: pointer;
@@ -289,7 +289,7 @@
 .pipeline-node-editor {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 8px;
 }
 .pipeline-node-editor > header {
   padding: 11px 13px;
@@ -350,7 +350,7 @@
   height: 32px;
   place-items: center;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-secondary);
   background: white;
   cursor: pointer;
@@ -371,7 +371,7 @@
   resize: vertical;
   padding: 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 8px;
   outline: none;
   color: var(--blue-950);
   background: #f9fbfe;
@@ -413,7 +413,7 @@
   min-height: 42px;
   padding: 7px;
   border: 1px dashed var(--border-strong);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--surface-blue);
   font-size: 11px;
 }
@@ -507,7 +507,7 @@
   max-height: 230px;
   margin: 9px 0 0;
   padding: 10px;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--blue-950);
   background: #f5f8fc;
   font-family: "IBM Plex Mono", monospace;

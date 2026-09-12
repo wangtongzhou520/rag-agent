@@ -53,7 +53,7 @@
   overflow: hidden;
   margin-top: 14px;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: 8px;
   background: white;
   box-shadow: 0 1px 2px rgb(16 42 86 / 3%);
 }
@@ -124,7 +124,7 @@
   height: 28px;
   place-items: center;
   border: 1px solid var(--blue-200);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--blue-700);
   background: var(--blue-50);
   font-family: "IBM Plex Mono", monospace;
@@ -294,7 +294,7 @@
   gap: 5px;
   padding: 6px 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   color: var(--blue-700);
   background: transparent;
   font-size: 11px;
@@ -344,7 +344,7 @@
   resize: vertical;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 8px;
   outline: none;
   color: var(--text-primary);
   background: white;
@@ -365,7 +365,7 @@
   height: 34px;
   place-items: center;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-muted);
   background: white;
   font-family: "IBM Plex Mono", monospace;
