@@ -56,6 +56,8 @@ from app.knowledge.models import (
 )
 from app.knowledge.tasks import KnowledgeTaskHandler
 from app.rag.conversation import ConversationService
+from app.rag.eval.reports import EvalReportService
+from app.rag.eval.schemas import EvalReportCreate
 from app.rag.eval.service import EvalService
 from app.rag.feedback import MessageFeedbackService, MessageFeedbackTaskHandler
 from app.rag.intent.cache import IntentTreeCacheManager
@@ -581,6 +583,36 @@ async def test_eval_resolves_business_doc_ids_and_preserves_missing_slots(
     )
 
     assert doc_ids == ["FAQ.VAC.001", "README", None]
+
+
+async def test_eval_report_history_persists_summary_and_case_details(
+    integration_engine: AsyncEngine,
+) -> None:
+    service = EvalReportService(integration_engine)
+    created = await service.create(
+        EvalReportCreate(
+            label="rc-1",
+            dataset="evals/datasets/rag_quality.v2.jsonl",
+            collections=["m5_quality_baseline", "m5_quality_baseline"],
+            includeAnswers=True,
+            thresholds={"minHitRate": 0.8},
+            summary={"docHitRate": 1.0, "thresholdsPassed": True},
+            cases=[{"id": "leave-01", "passed": True}],
+        ),
+        created_by=7,
+    )
+
+    page = await service.page(1, 10)
+    detail = await service.detail(created["reportId"])
+
+    assert page["total"] == 1
+    assert page["records"][0]["reportId"] == created["reportId"]
+    assert page["records"][0]["collections"] == ["m5_quality_baseline"]
+    assert page["records"][0]["createTime"] > 0
+    assert detail is not None
+    assert detail["includeAnswers"] is True
+    assert detail["cases"] == [{"id": "leave-01", "passed": True}]
+    assert await service.detail("not-a-uuid") is None
 
 
 async def test_pg_queue_multiple_workers_claim_each_task_once(

@@ -323,10 +323,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             args.min_answer_complete_rate if args.with_answers else None
         ),
     )
-    return {
+    payload = {
         "dataset": str(args.dataset),
         "baseUrl": args.base_url,
         "collections": args.collection,
+        "includeAnswers": args.with_answers,
+        "label": args.label,
         "thresholds": {
             "minHitRate": args.min_hit_rate,
             "minMrr": args.min_mrr,
@@ -342,6 +344,19 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "summary": summary,
         "cases": [asdict(result) for result in results],
     }
+    if args.publish_report:
+        async with httpx.AsyncClient(
+            base_url=args.base_url.rstrip("/"), headers=headers, timeout=args.timeout
+        ) as client:
+            response = await client.post("/rag/eval/reports", json=payload)
+            response.raise_for_status()
+            published = response.json()
+            if str(published.get("code")) != "0" or not isinstance(
+                published.get("data"), dict
+            ):
+                raise ValueError(published.get("message") or "invalid report response")
+            payload["reportId"] = published["data"].get("reportId")
+    return payload
 
 
 def parse_args() -> argparse.Namespace:
@@ -373,6 +388,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-answer-keyword-recall", type=float, default=0.9)
     parser.add_argument("--min-answer-complete-rate", type=float, default=0.8)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--publish-report",
+        action="store_true",
+        help="persist this batch in the deployed admin report history",
+    )
+    parser.add_argument("--label", help="optional human-readable report label")
     args = parser.parse_args()
     if args.collection is None:
         args.collection = ["m5_quality_baseline"]

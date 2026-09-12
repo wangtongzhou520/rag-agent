@@ -12,8 +12,72 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
       body: JSON.stringify(result({ userId: 1, username: "admin", role: "ADMIN" })),
     }),
   );
-  await page.route("**/api/ragent/rag/eval**", (route) =>
-    route.fulfill({
+  await page.route("**/api/ragent/rag/eval**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/rag/eval/reports")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({
+            records: [
+              {
+                reportId: "0199d13d-eval-7000-8000-000000000030",
+                label: "阈值校准后",
+                dataset: "evals/datasets/rag_quality.v2.jsonl",
+                collections: ["m5_quality_baseline"],
+                includeAnswers: true,
+                summary: {
+                  total: 30,
+                  errors: 0,
+                  docHitRate: 1,
+                  mrr: 1,
+                  contextPrecision: 0.9556,
+                  answerKeywordRecall: 1,
+                  answerCompleteRate: 1,
+                  latencyP95Ms: 3144,
+                  thresholdsPassed: true,
+                },
+                createdBy: 1,
+                createTime: 1_789_099_200_000,
+              },
+            ],
+            total: 1,
+            current: 1,
+            size: 8,
+          }),
+        ),
+      });
+    }
+    if (path.includes("/rag/eval/reports/")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(
+          result({
+            reportId: "0199d13d-eval-7000-8000-000000000030",
+            label: "阈值校准后",
+            dataset: "evals/datasets/rag_quality.v2.jsonl",
+            collections: ["m5_quality_baseline"],
+            includeAnswers: true,
+            summary: {
+              total: 30,
+              errors: 0,
+              docHitRate: 1,
+              mrr: 1,
+              contextPrecision: 0.9556,
+              answerKeywordRecall: 1,
+              answerCompleteRate: 1,
+              latencyP95Ms: 3144,
+              thresholdsPassed: true,
+            },
+            thresholds: { minHitRate: 0.8 },
+            cases: [{ id: "leave-01", question: "年假有几天？", passed: true }],
+            createdBy: 1,
+            createTime: 1_789_099_200_000,
+          }),
+        ),
+      });
+    }
+    return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify(
         result({
@@ -37,8 +101,8 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
           latencyMs: 842,
         }),
       ),
-    }),
-  );
+    });
+  });
 
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/admin/eval");
@@ -51,6 +115,9 @@ test("runs a retrieval probe and renders evidence on desktop and mobile", async 
   await expect(page.getByText("1.26 s", { exact: true })).toBeVisible();
   await expect(page.getByText(/P0 故障应在 15 分钟内/)).toBeVisible();
   await expect(page.getByText("知识库", { exact: true }).last()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "批次评测记录" })).toBeVisible();
+  await page.getByRole("button", { name: /阈值校准后/ }).click();
+  await expect(page.getByText("本批次没有失败用例。")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("eval-desktop.png"), fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });

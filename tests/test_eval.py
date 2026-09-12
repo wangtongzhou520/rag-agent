@@ -12,7 +12,7 @@ from app.framework.config import get_settings
 from app.main import create_app
 from app.rag.eval.answer import EvalAnswerGenerator
 from app.rag.eval.router import router
-from app.rag.eval.schemas import EvalResponse
+from app.rag.eval.schemas import EvalReportCreate, EvalResponse
 from app.rag.eval.service import EvalService
 from app.rag.intent.node import IntentKind, IntentNode, NodeScore, SubQuestionIntent
 from app.rag.mcp.service import McpEvidence
@@ -220,6 +220,42 @@ async def test_eval_router_returns_camel_case_contract() -> None:
     app.state.eval_service.evaluate.assert_awaited_once_with(  # type: ignore[union-attr]
         "问题", collections=("quality-baseline",), include_answer=True
     )
+
+
+async def test_eval_report_router_uses_admin_identity_and_camel_case() -> None:
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[require_admin] = lambda: LoginUser(
+        userId=9, username="admin", role="ADMIN"
+    )
+    app.state.eval_report_service = SimpleNamespace(
+        create=AsyncMock(return_value={"reportId": "report-1"}),
+        page=AsyncMock(
+            return_value={"records": [], "total": 0, "current": 1, "size": 10}
+        ),
+    )
+    payload = {
+        "label": "release-candidate",
+        "dataset": "evals/datasets/rag_quality.v2.jsonl",
+        "collections": ["m5_quality_baseline"],
+        "includeAnswers": True,
+        "thresholds": {"minHitRate": 0.8},
+        "summary": {"docHitRate": 1.0, "thresholdsPassed": True},
+        "cases": [],
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        created = await client.post("/rag/eval/reports", json=payload)
+        listed = await client.get("/rag/eval/reports", params={"size": 10})
+
+    assert created.status_code == 200
+    assert created.json()["data"]["reportId"] == "report-1"
+    assert listed.json()["data"]["records"] == []
+    command = app.state.eval_report_service.create.await_args.args[0]
+    assert isinstance(command, EvalReportCreate)
+    assert command.include_answers is True
+    assert app.state.eval_report_service.create.await_args.args[1] == 9
 
 
 def test_eval_route_is_conditionally_registered(monkeypatch) -> None:

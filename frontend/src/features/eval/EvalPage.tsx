@@ -1,19 +1,25 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
   BookOpenCheck,
   Braces,
+  CheckCircle2,
   Clock3,
   FileSearch,
   FlaskConical,
+  History,
   MessageSquareText,
+  RefreshCw,
   Route,
   TerminalSquare,
+  XCircle,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
-import { evaluateQuestion } from "@/features/eval/api";
+import { evaluateQuestion, getEvalReport, listEvalReports } from "@/features/eval/api";
 import { formatEvalLatency, routeLabel } from "@/features/eval/format";
+import type { EvalReportSummary } from "@/features/eval/types";
+import { formatTraceTime } from "@/features/trace/format";
 import { Button } from "@/shared/ui/Button";
 
 import "@/features/eval/EvalPage.css";
@@ -27,8 +33,21 @@ const EXAMPLES = [
 export function EvalPage() {
   const [question, setQuestion] = useState(EXAMPLES[0]);
   const [includeAnswer, setIncludeAnswer] = useState(false);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const mutation = useMutation({ mutationFn: evaluateQuestion });
+  const reportsQuery = useQuery({
+    queryKey: ["eval-reports"],
+    queryFn: () => listEvalReports(),
+    retry: false,
+  });
+  const reportQuery = useQuery({
+    queryKey: ["eval-report", selectedReportId],
+    queryFn: () => getEvalReport(selectedReportId!),
+    enabled: Boolean(selectedReportId),
+    retry: false,
+  });
   const result = mutation.data;
+  const reports = reportsQuery.data?.records ?? [];
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -135,6 +154,137 @@ export function EvalPage() {
             </div>
           </div>
         </aside>
+      </section>
+
+      <section className="eval-history-board" aria-labelledby="eval-history-title">
+        <header>
+          <div>
+            <History aria-hidden="true" />
+            <div>
+              <span>BATCH ARCHIVE</span>
+              <h2 id="eval-history-title">批次评测记录</h2>
+            </div>
+          </div>
+          <Button
+            variant="secondary"
+            onClick={() => reportsQuery.refetch()}
+            disabled={reportsQuery.isFetching}
+          >
+            <RefreshCw aria-hidden="true" />
+            刷新
+          </Button>
+        </header>
+
+        {reports.length ? (
+          <div className="eval-history-layout">
+            <div className="eval-report-list">
+              {reports.map((report, index) => (
+                <button
+                  key={report.reportId}
+                  type="button"
+                  className={selectedReportId === report.reportId ? "is-selected" : undefined}
+                  onClick={() => setSelectedReportId(report.reportId)}
+                >
+                  <span className="eval-report-sequence">
+                    {String(reports.length - index).padStart(2, "0")}
+                  </span>
+                  <div className="eval-report-identity">
+                    <strong>{report.label || datasetName(report.dataset)}</strong>
+                    <small>{formatTraceTime(report.createTime)}</small>
+                  </div>
+                  <ReportMetric label="命中率" value={percentage(report.summary.docHitRate)} />
+                  <ReportMetric
+                    label="上下文精度"
+                    value={percentage(report.summary.contextPrecision)}
+                    delta={metricDelta(report, reports[index + 1], "contextPrecision")}
+                  />
+                  <ReportMetric
+                    label="P95"
+                    value={formatEvalLatency(report.summary.latencyP95Ms ?? 0)}
+                  />
+                  <span
+                    className={
+                      report.summary.thresholdsPassed
+                        ? "eval-report-state is-pass"
+                        : "eval-report-state is-fail"
+                    }
+                  >
+                    {report.summary.thresholdsPassed ? (
+                      <CheckCircle2 aria-hidden="true" />
+                    ) : (
+                      <XCircle aria-hidden="true" />
+                    )}
+                    {report.summary.thresholdsPassed ? "通过" : "未通过"}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <aside className="eval-report-detail" aria-live="polite">
+              {!selectedReportId ? (
+                <div className="eval-report-detail-empty">
+                  <span>SELECT A RUN</span>
+                  <p>选择左侧批次查看逐题异常和答案指标。</p>
+                </div>
+              ) : reportQuery.isLoading ? (
+                <div className="eval-report-detail-empty">
+                  <span>LOADING</span>
+                  <p>正在读取批次报告…</p>
+                </div>
+              ) : reportQuery.data ? (
+                <>
+                  <header>
+                    <div>
+                      <span>RUN DETAIL</span>
+                      <strong>
+                        {reportQuery.data.label || datasetName(reportQuery.data.dataset)}
+                      </strong>
+                    </div>
+                    <code>{reportQuery.data.reportId.slice(0, 8)}</code>
+                  </header>
+                  <div className="eval-report-answer-metrics">
+                    <ReportMetric label="MRR" value={decimal(reportQuery.data.summary.mrr)} />
+                    <ReportMetric
+                      label="答案事实覆盖"
+                      value={percentage(reportQuery.data.summary.answerKeywordRecall)}
+                    />
+                    <ReportMetric
+                      label="完整答案率"
+                      value={percentage(reportQuery.data.summary.answerCompleteRate)}
+                    />
+                  </div>
+                  <div className="eval-report-cases">
+                    <span>FAILED CASES</span>
+                    {reportQuery.data.cases.filter((item) => !item.passed).length ? (
+                      reportQuery.data.cases
+                        .filter((item) => !item.passed)
+                        .slice(0, 5)
+                        .map((item) => (
+                          <div key={item.id}>
+                            <code>{item.id}</code>
+                            <p>{item.question || "未记录问题"}</p>
+                            <small>{item.error || "指标未达到当前门槛"}</small>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="eval-report-all-pass">本批次没有失败用例。</p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="eval-report-detail-empty">
+                  <span>UNAVAILABLE</span>
+                  <p>报告详情暂时无法读取。</p>
+                </div>
+              )}
+            </aside>
+          </div>
+        ) : (
+          <div className="eval-history-empty">
+            <span>{reportsQuery.isLoading ? "正在读取批次记录…" : "尚未发布批量评测报告"}</span>
+            <code>scripts.evaluate_rag --publish-report</code>
+          </div>
+        )}
       </section>
 
       {!result && !mutation.isPending ? (
@@ -274,6 +424,56 @@ export function EvalPage() {
       ) : null}
     </main>
   );
+}
+
+function ReportMetric({
+  label,
+  value,
+  delta,
+}: {
+  label: string;
+  value: string;
+  delta?: number | null;
+}) {
+  return (
+    <span className="eval-report-metric">
+      <small>{label}</small>
+      <strong>{value}</strong>
+      {delta != null && delta !== 0 && (
+        <i className={delta > 0 ? "is-up" : "is-down"}>
+          {delta > 0 ? "+" : ""}
+          {(delta * 100).toFixed(1)}pp
+        </i>
+      )}
+    </span>
+  );
+}
+
+function datasetName(value: string) {
+  return (
+    value
+      .split("/")
+      .pop()
+      ?.replace(/\.jsonl$/i, "") || value
+  );
+}
+
+function percentage(value?: number | null) {
+  return value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+}
+
+function decimal(value?: number | null) {
+  return value == null ? "—" : value.toFixed(3);
+}
+
+function metricDelta(
+  current: EvalReportSummary,
+  previous: EvalReportSummary | undefined,
+  key: "contextPrecision",
+) {
+  const currentValue = current.summary[key];
+  const previousValue = previous?.summary[key];
+  return currentValue == null || previousValue == null ? null : currentValue - previousValue;
 }
 
 function Metric({

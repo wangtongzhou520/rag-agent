@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 import app.framework.async_task
 import app.ingestion.models
 import app.knowledge.models
+import app.rag.eval.models
 import app.rag.intent.orm
 import app.rag.mcp.orm
 import app.rag.models
@@ -51,6 +52,7 @@ from app.knowledge.service import KnowledgeService
 from app.model_runtime.factory import build_model_runtime
 from app.rag.conversation import ConversationService
 from app.rag.eval.answer import EvalAnswerGenerator
+from app.rag.eval.reports import EvalReportService
 from app.rag.eval.router import router as eval_router
 from app.rag.eval.service import EvalService
 from app.rag.feedback import MessageFeedbackService
@@ -293,6 +295,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             mcp_dispatcher,
             EvalAnswerGenerator(model_runtime.llm, prompt_resolver),
         )
+        app.state.eval_report_service = EvalReportService(engine)
     auth_service = AuthService(
         engine, redis_client, settings.auth, settings.redis
     )

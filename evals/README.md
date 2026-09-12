@@ -17,6 +17,7 @@
 ```bash
 uv run python -m scripts.evaluate_rag
 uv run python -m scripts.evaluate_rag --with-answers
+uv run python -m scripts.evaluate_rag --with-answers --publish-report --label "release-candidate"
 ```
 
 默认门槛为文档 Hit Rate ≥ 0.8、MRR ≥ 0.7、Context Precision ≥ 0.75、Latency P95 ≤ 5000ms，
@@ -24,6 +25,8 @@ uv run python -m scripts.evaluate_rag --with-answers
 `--with-answers` 会额外复用线上 KB Prompt 和 Chat 路由生成答案，但不创建会话、不写入消息记录。
 答案模式默认同时守卫关键事实覆盖率 ≥ 0.90 与完整答案率 ≥ 0.80。需要认证的部署可将管理员原值 token 写入
 `RAGENT_EVAL_TOKEN` 环境变量，脚本不会把 token 写进报告。
+`--publish-report` 会在全部用例完成后将摘要和逐题结果写入管理端批次档案；即使质量门槛未通过也会
+保存报告，便于定位回退。发布动作不保存 API Token、Provider Key 或 Authorization Header。
 脚本默认只检索 `m5_quality_baseline`，严格关闭跨库补充召回，避免开发库的其他文档
 污染评分。可通过重复传入 `--collection <name>` 评测其他受控集合。
 

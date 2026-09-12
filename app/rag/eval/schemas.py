@@ -1,4 +1,6 @@
-"""纯检索评测接口契约。"""
+"""检索评测与批次报告接口契约。"""
+
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,3 +26,15 @@ class EvalResponse(BaseModel):
     sub_intents: list[str] = Field(alias="subIntents")
     intent_leaf_ids: list[str | None] = Field(alias="intentLeafIds")
     latency_ms: int = Field(alias="latencyMs")
+
+
+class EvalReportCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    label: str | None = Field(default=None, max_length=128)
+    dataset: str = Field(min_length=1, max_length=255)
+    collections: list[str] = Field(min_length=1, max_length=32)
+    include_answers: bool = Field(default=False, alias="includeAnswers")
+    thresholds: dict[str, Any]
+    summary: dict[str, Any]
+    cases: list[dict[str, Any]] = Field(max_length=1000)
