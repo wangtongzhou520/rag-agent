@@ -1,4 +1,4 @@
-import { ArrowRight, KeyRound, UserRound } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -36,60 +36,40 @@ export function LoginPage() {
 
   return (
     <main className="login-page">
-      <section className="login-brand-panel" aria-label="Ragent AI 产品介绍">
-        <div className="login-brand-panel__grid" aria-hidden="true" />
-        <BrandMark className="relative z-10 [&_strong]:text-white [&_span_span]:text-blue-100" />
-        <div className="login-brand-copy">
-          <p className="login-eyebrow">Ragent 工作台</p>
-          <h1>知识检索与问答，在一个工作区完成。</h1>
-          <ul className="login-capabilities">
-            <li>知识库与文档管理</li>
-            <li>意图配置与检索控制</li>
-            <li>回答来源与运行链路</li>
-          </ul>
-        </div>
-      </section>
-
-      <section className="login-form-panel">
+      <div className="login-panel">
+        <BrandMark />
         <form className="login-form" onSubmit={handleSubmit}>
-          <div>
-            <p className="login-form__kicker">欢迎回来</p>
-            <h2>登录 Ragent AI</h2>
-            <p className="login-form__hint">进入智能问答与知识管理工作台</p>
-          </div>
+          <header className="login-form__head">
+            <h1>登录</h1>
+            <p>使用管理员分配的账号进入工作台。</p>
+          </header>
           <label className="form-field">
             <span>用户名</span>
-            <span className="form-field__control">
-              <UserRound aria-hidden="true" />
-              <Input
-                autoComplete="username"
-                autoFocus
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="请输入用户名"
-              />
-            </span>
+            <Input
+              autoComplete="username"
+              autoFocus
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="请输入用户名"
+            />
           </label>
           <label className="form-field">
             <span>密码</span>
-            <span className="form-field__control">
-              <KeyRound aria-hidden="true" />
-              <Input
-                autoComplete="current-password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="请输入密码"
-              />
-            </span>
+            <Input
+              autoComplete="current-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="请输入密码"
+            />
           </label>
-          <Button className="mt-1 w-full" disabled={busy} type="submit">
-            {busy ? "正在验证…" : "进入工作台"}
+          <Button className="login-form__submit w-full" disabled={busy} type="submit">
+            {busy ? "正在验证…" : "登录"}
             {!busy && <ArrowRight aria-hidden="true" className="h-4 w-4" />}
           </Button>
-          <p className="login-form__security">凭据仅发送至当前 Ragent API，不会写入浏览器日志。</p>
         </form>
-      </section>
+        <p className="login-panel__foot">账号由系统管理员分配，如有问题请联系管理员。</p>
+      </div>
     </main>
   );
 }

@@ -56,34 +56,16 @@ textarea {
 
 .login-page {
   display: grid;
+  place-items: center;
   min-height: 100vh;
-  grid-template-columns: minmax(360px, 430px) minmax(440px, 1fr);
-  background: white;
+  padding: 48px 24px 72px;
+  background: var(--canvas);
 }
-.login-brand-panel {
-  position: relative;
-  display: flex;
-  min-height: 100vh;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 48px clamp(42px, 6vw, 92px);
-  color: white;
-  background: var(--blue-700);
+.login-panel {
+  width: min(100%, 360px);
+  display: grid;
+  gap: 30px;
 }
-.login-brand-panel::after {
-  display: none;
-}
-.login-brand-panel__grid {
-  display: none;
-}
-.login-brand-copy {
-  position: relative;
-  z-index: 1;
-  margin: auto 0;
-  max-width: 340px;
-  animation: enter-up 220ms ease-out both;
-}
-.login-eyebrow,
 .foundation-eyebrow {
   margin: 0 0 16px;
   font-family: "IBM Plex Sans", "Noto Sans SC", sans-serif;
@@ -91,57 +73,49 @@ textarea {
   font-weight: 600;
   letter-spacing: 0.04em;
 }
-.login-brand-copy h1 {
-  margin: 0;
-  max-width: 340px;
-  font-size: 34px;
-  font-weight: 600;
-  line-height: 1.35;
-  letter-spacing: -0.025em;
-}
-.login-capabilities {
-  display: grid;
-  gap: 0;
-  margin: 34px 0 0;
-  padding: 0;
-  border-top: 1px solid rgb(255 255 255 / 22%);
-  list-style: none;
-}
-.login-capabilities li {
-  padding: 13px 0;
-  border-bottom: 1px solid rgb(255 255 255 / 22%);
-  color: var(--blue-100);
-  font-size: 13px;
-}
-.login-form-panel {
-  display: grid;
-  place-items: center;
-  padding: 48px;
-  background: #fbfcfe;
-}
 .login-form {
-  width: min(100%, 410px);
   display: grid;
-  gap: 22px;
-  animation: enter-up 220ms 80ms ease-out both;
+  gap: 18px;
 }
-.login-form__kicker {
-  margin: 0 0 8px;
-  color: var(--blue-600);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-.login-form h2 {
+.login-form__head h1 {
   margin: 0;
-  font-size: 32px;
-  line-height: 1.25;
-  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
-.login-form__hint {
-  margin: 9px 0 0;
+.login-form__head p {
+  margin: 6px 0 0;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
+}
+.login-form__submit {
+  height: 44px;
+  margin-top: 6px;
+  border-radius: 8px;
+  background: var(--blue-950);
+  box-shadow: none;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.login-form__submit:hover {
+  background: var(--blue-900);
+}
+.login-form__submit:active {
+  background: #0b1c39;
+}
+.login-panel__foot {
+  margin: 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.login-form input:focus-visible {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 1px;
+  box-shadow: none;
 }
 .form-field {
   display: grid;
@@ -149,29 +123,6 @@ textarea {
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 600;
-}
-.form-field__control {
-  position: relative;
-  display: block;
-}
-.form-field__control > svg {
-  position: absolute;
-  z-index: 1;
-  left: 13px;
-  top: 13px;
-  width: 17px;
-  height: 17px;
-  color: var(--text-muted);
-}
-.form-field__control input {
-  padding-left: 41px;
-}
-.login-form__security {
-  margin: -4px 0 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.6;
-  text-align: center;
 }
 
 .signal-rail {
@@ -4487,22 +4438,6 @@ textarea {
 }
 
 @media (max-width: 900px) {
-  .login-page {
-    grid-template-columns: 1fr;
-  }
-  .login-brand-panel {
-    min-height: 300px;
-    padding: 32px;
-  }
-  .login-brand-copy {
-    margin: 56px 0 10px;
-  }
-  .login-brand-copy h1 {
-    font-size: 32px;
-  }
-  .login-form-panel {
-    padding: 56px 24px;
-  }
   .console-layout {
     grid-template-columns: 1fr;
   }
@@ -4719,18 +4654,6 @@ textarea {
 }
 
 @media (max-width: 640px) {
-  .login-brand-panel {
-    min-height: 250px;
-  }
-  .login-brand-copy {
-    margin: 38px 0 0;
-  }
-  .login-brand-copy h1 {
-    font-size: 34px;
-  }
-  .login-capabilities {
-    display: none;
-  }
   .foundation-header {
     padding: 0 18px;
   }

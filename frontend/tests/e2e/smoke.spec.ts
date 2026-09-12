@@ -6,10 +6,11 @@ import type { RagTraceDetail, RagTraceRun } from "@/features/trace/types";
 
 const result = <T>(data: T) => ({ code: "0", message: "ok", data });
 
-test("renders the blue login foundation", async ({ page }) => {
+test("renders the focused login screen", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: "登录 Ragent AI" })).toBeVisible();
-  await expect(page.getByText("知识库与文档管理", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "登录", exact: true })).toBeVisible();
+  await expect(page.getByText("账号由系统管理员分配，如有问题请联系管理员。")).toBeVisible();
+  await expect(page.getByRole("button", { name: "登录" })).toBeVisible();
 });
 
 test("shows real dashboard metrics and switches the trend scope", async ({ page }, testInfo) => {
