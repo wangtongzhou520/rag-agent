@@ -17,6 +17,18 @@
 首次使用时，创建 `collectionName=m5_quality_baseline` 的独立知识库，将 `corpus/` 下
 三个 Markdown 文件导入并等待向量化成功。启动 API 后运行：
 
+这一步可以交给播种脚本自动完成，它按 `collectionName` 精确复用或创建知识库，只上传缺失的
+语料，对未完成或失败的文档触发分块，并轮询到 `success` 为止；重复执行不会重复建库或重复
+分块，可以直接用在全新部署上：
+
+```bash
+uv run python -m scripts.seed_eval_corpus
+uv run python -m scripts.seed_eval_corpus --base-url https://rag.example.com/api/ragent
+```
+
+脚本失败时以非零退出码结束，并打印失败或超时文档名；`--output` 可落盘播种结果 JSON。
+Corpus 导入完成后运行：
+
 ```bash
 uv run python -m scripts.evaluate_rag
 uv run python -m scripts.evaluate_rag --with-answers
