@@ -19,6 +19,7 @@ uv run python -m scripts.evaluate_rag
 uv run python -m scripts.evaluate_rag --with-answers
 uv run python -m scripts.evaluate_rag --with-answers --publish-report --label "release-candidate"
 uv run python -m scripts.evaluate_rag --judge-answers --publish-report --label "semantic-check"
+uv run python -m scripts.evaluate_rag --judge-answers --limit 3 --label "semantic-smoke"
 ```
 
 默认门槛为文档 Hit Rate ≥ 0.8、MRR ≥ 0.7、Context Precision ≥ 0.75、Latency P95 ≤ 5000ms，
@@ -49,6 +50,8 @@ uv run python -m scripts.evaluate_rag --judge-answers --publish-report --label "
 Semantic Score/Pass Rate，不影响质量门禁；只有同时传入 `--min-semantic-score <0..1>` 才将平均
 语义分数作为退出码条件。模型裁判可能与答题模型同源，存在自我偏好，因此不能替代人工抽检；生产
 基线建议固定独立裁判模型后再启用硬门槛。
+需要先验证模型输出契约或控制试跑费用时，可用 `--limit N` 只执行数据集前 N 题；正式基线不得带
+该参数。
 
 ## 本地基线与优化结果
 

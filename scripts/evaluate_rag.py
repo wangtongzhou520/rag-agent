@@ -351,6 +351,8 @@ async def run_case(
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     cases = load_dataset(args.dataset)
+    if args.limit is not None:
+        cases = cases[: args.limit]
     headers = {}
     token = os.getenv(args.token_env, "").strip()
     if token:
@@ -442,6 +444,11 @@ def parse_args() -> argparse.Namespace:
         help="limit retrieval to a collection; repeat for multiple collections",
     )
     parser.add_argument("--concurrency", type=int, default=4)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="run only the first N cases for smoke testing",
+    )
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument(
         "--with-answers",
@@ -483,8 +490,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.concurrency <= 0 or args.timeout <= 0:
-        raise SystemExit("concurrency and timeout must be greater than zero")
+    if (
+        args.concurrency <= 0
+        or args.timeout <= 0
+        or (args.limit is not None and args.limit <= 0)
+    ):
+        raise SystemExit("concurrency, timeout and limit must be greater than zero")
     if not all(
         0 <= value <= 1
         for value in (
