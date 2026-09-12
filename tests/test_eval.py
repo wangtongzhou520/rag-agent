@@ -114,7 +114,9 @@ async def test_eval_answer_judge_parses_fenced_json_and_uses_standard_tier() -> 
     )
     judge = EvalAnswerJudge(llm)  # type: ignore[arg-type]
 
-    result = await judge.judge("问题", "标准答案", "候选答案", ["事实"])
+    result = await judge.judge(
+        "问题", "标准答案", "候选答案", ["事实"], ["检索依据"]
+    )
 
     assert result == EvalJudgeResponse(
         score=0.9, verdict="PASS", contradictions=[], reason="一致"
@@ -123,6 +125,7 @@ async def test_eval_answer_judge_parses_fenced_json_and_uses_standard_tier() -> 
     assert str(tier) == "standard"
     assert request.temperature == 0  # type: ignore[attr-defined]
     assert '"referenceAnswer": "标准答案"' in request.messages[-1].content  # type: ignore[attr-defined]
+    assert '"contexts": ["检索依据"]' in request.messages[-1].content  # type: ignore[attr-defined]
 
 
 async def test_eval_answer_judge_rejects_out_of_range_score() -> None:
@@ -306,6 +309,7 @@ async def test_eval_report_router_uses_admin_identity_and_camel_case() -> None:
                 "referenceAnswer": "标准",
                 "candidateAnswer": "候选",
                 "expectedKeywords": ["事实"],
+                "contexts": ["检索依据"],
             },
         )
 
@@ -318,7 +322,7 @@ async def test_eval_report_router_uses_admin_identity_and_camel_case() -> None:
     assert command.include_answers is True
     assert app.state.eval_report_service.create.await_args.args[1] == 9
     app.state.eval_answer_judge.judge.assert_awaited_once_with(
-        "问题", "标准", "候选", ["事实"]
+        "问题", "标准", "候选", ["事实"], ["检索依据"]
     )
 
 

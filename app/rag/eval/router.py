@@ -80,5 +80,6 @@ async def judge_answer(command: EvalJudgeRequest, request: Request) -> dict:
         command.reference_answer,
         command.candidate_answer,
         command.expected_keywords,
+        command.contexts,
     )
     return Results.success(result).model_dump(by_alias=True)

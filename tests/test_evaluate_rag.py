@@ -230,6 +230,7 @@ async def test_run_case_can_collect_semantic_judge_result() -> None:
                 "data": {
                     "retrievedDocIds": ["doc"],
                     "retrievedContextDocIds": ["doc"],
+                    "retrievedContexts": ["标准答案和补充依据"],
                     "retrievedScores": [0.9],
                     "answer": "标准答案",
                     "answerLatencyMs": 100,

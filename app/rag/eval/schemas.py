@@ -49,6 +49,7 @@ class EvalJudgeRequest(BaseModel):
     expected_keywords: list[str] = Field(
         default_factory=list, alias="expectedKeywords", max_length=100
     )
+    contexts: list[str] = Field(default_factory=list, max_length=100)
 
 
 class EvalJudgeResponse(BaseModel):

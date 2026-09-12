@@ -43,13 +43,15 @@ uv run python -m scripts.evaluate_rag --judge-answers --limit 3 --label "semanti
 - Answer Keyword Recall：生成答案覆盖黄金关键事实的比例，先做全半角、大小写和标点归一化；
 - Answer Complete Rate：覆盖当题全部关键事实的用例比例；
 - Answer Latency P95：仅 Chat 答案生成阶段的 P95，与检索 P95 分开统计。
-- Semantic Score：模型裁判对候选答案与参考答案事实一致性的 0–1 评分；
+- Semantic Score：模型裁判结合参考答案与本次召回上下文，对候选答案事实一致性给出的 0–1 评分；
 - Semantic Pass Rate：裁判输出 `PASS` 的比例，`PARTIAL` 与 `FAIL` 会在报告中标记为风险用例。
 
 `--judge-answers` 隐含启用答案生成，并为每题额外调用一次 STANDARD 档 Chat 模型。默认只记录
 Semantic Score/Pass Rate，不影响质量门禁；只有同时传入 `--min-semantic-score <0..1>` 才将平均
 语义分数作为退出码条件。模型裁判可能与答题模型同源，存在自我偏好，因此不能替代人工抽检；生产
 基线建议固定独立裁判模型后再启用硬门槛。
+参考答案定义最低事实要求，不作为答案内容上限；召回上下文支持、且不与参考答案矛盾的补充信息
+不应扣分。裁判仅对无依据、矛盾、误导或明显偏题的补充内容降分。
 需要先验证模型输出契约或控制试跑费用时，可用 `--limit N` 只执行数据集前 N 题；正式基线不得带
 该参数。
 

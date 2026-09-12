@@ -302,6 +302,8 @@ async def run_case(
                             "referenceAnswer": case.reference_answer,
                             "candidateAnswer": result.answer,
                             "expectedKeywords": case.expected_keywords,
+                            "contexts": payload["data"].get("retrievedContexts")
+                            or [],
                         },
                     )
                 judge_response.raise_for_status()
