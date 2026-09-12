@@ -309,7 +309,7 @@ test("streams an answer and opens its source context", async ({ page }) => {
   );
 
   await page.goto("/chat");
-  await expect(page.getByRole("heading", { name: /可观察的知识路径/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "开始提问" })).toBeVisible();
   await page.getByLabel("输入问题").fill("当前检索流程是什么？");
   await page.getByRole("button", { name: "发送" }).click();
 

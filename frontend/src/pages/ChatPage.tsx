@@ -322,30 +322,23 @@ export function ChatPage() {
             </div>
           ) : turns.length === 0 ? (
             <section className="chat-empty-state">
-              <p>基于知识库回答</p>
-              <h1>
-                让问题进入一条
-                <span>可观察的知识路径。</span>
-              </h1>
-              <div className="chat-empty-state__line" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-                <i />
-                <i />
-              </div>
-              <p className="chat-empty-state__description">
-                提问后，你可以分别查看模型思考、检索来源和最终回答。以下问题仅作为输入示例。
-              </p>
-              <div className="example-grid">
+              <header className="chat-empty-state__intro">
+                <h1>开始提问</h1>
+                <p>回答会附带引用来源，点击正文里的角标可查看原文片段。</p>
+              </header>
+              <ul className="example-list">
                 {examples.map((example, index) => (
-                  <button type="button" key={example} onClick={() => askExample(example)}>
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    {example}
-                    <ArrowUp aria-hidden="true" />
-                  </button>
+                  <li key={example}>
+                    <button type="button" onClick={() => askExample(example)}>
+                      <span className="example-list__index">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <span className="example-list__text">{example}</span>
+                      <ArrowUp aria-hidden="true" className="example-list__icon" />
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </section>
           ) : (
             <div className="message-flow">
@@ -355,7 +348,6 @@ export function ChatPage() {
                     <div className="user-question">{turn.content}</div>
                   ) : (
                     <div className="assistant-answer">
-                      <div className="assistant-answer__mark">RA</div>
                       <div className="assistant-answer__content">
                         <ThinkingPanel
                           thinking={turn.thinking || ""}
