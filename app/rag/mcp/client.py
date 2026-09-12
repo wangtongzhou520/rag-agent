@@ -3,6 +3,7 @@
 import asyncio
 import os
 import time
+from contextlib import suppress
 from urllib.parse import urlparse
 
 import httpx
@@ -22,6 +23,7 @@ logger = get_logger(__name__)
 class McpClientManager:
     def __init__(self, settings: McpSettings, registry: McpToolRegistry) -> None:
         self._settings = {server.name: server for server in settings.servers}
+        self._rediscovery = settings.rediscovery
         self._registry = registry
         self._clients: dict[str, Client] = {}
         self._locks = {name: asyncio.Lock() for name in self._settings}
@@ -29,11 +31,60 @@ class McpClientManager:
             name: McpServerSnapshot(name=name, url=server.url)
             for name, server in self._settings.items()
         }
+        self._failures: dict[str, int] = {}
+        self._next_retry: dict[str, float] = {}
+        self._rediscovery_task: asyncio.Task | None = None
 
     async def discover_all(self) -> None:
         await asyncio.gather(
             *(self.refresh(name) for name in self._settings), return_exceptions=True
         )
+
+    async def start_rediscovery(self) -> None:
+        """启动后台重发现：只对离线 Server 按指数退避重试，成功即复位。"""
+
+        if not self._rediscovery.enabled or self._rediscovery_task is not None:
+            return
+        self._rediscovery_task = asyncio.create_task(self._rediscovery_loop())
+
+    async def stop_rediscovery(self) -> None:
+        task, self._rediscovery_task = self._rediscovery_task, None
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    async def _rediscovery_loop(self) -> None:
+        tick = max(0.2, min(5.0, self._rediscovery.initial_delay_seconds))
+        while True:
+            await asyncio.sleep(tick)
+            now = time.monotonic()
+            for name in list(self._failures):
+                if now < self._next_retry.get(name, 0.0):
+                    continue
+                try:
+                    snapshot = await self.refresh(name)
+                except Exception:
+                    logger.exception("mcp rediscovery failed", server_name=name)
+                    continue
+                if snapshot.status == "online":
+                    logger.info("mcp server recovered", server_name=name)
+
+    def _schedule_retry(self, server_name: str) -> float:
+        failures = self._failures.get(server_name, 0) + 1
+        self._failures[server_name] = failures
+        delay = min(
+            self._rediscovery.max_delay_seconds,
+            self._rediscovery.initial_delay_seconds
+            * (self._rediscovery.multiplier ** (failures - 1)),
+        )
+        self._next_retry[server_name] = time.monotonic() + delay
+        return delay
+
+    def _clear_retry(self, server_name: str) -> None:
+        self._failures.pop(server_name, None)
+        self._next_retry.pop(server_name, None)
 
     async def refresh(self, server_name: str) -> McpServerSnapshot:
         server = self._settings.get(server_name)
@@ -78,6 +129,7 @@ class McpClientManager:
             snapshot.server_version = getattr(server_info, "version", None)
             snapshot.tool_count = len(executors)
             snapshot.discovered_at = int(time.time() * 1000)
+            self._clear_retry(server.name)
             return snapshot
         except Exception as exc:  # noqa: BLE001 - 发现失败必须降级，不阻断 API 启动
             self._registry.unregister_server(server.name)
@@ -85,10 +137,12 @@ class McpClientManager:
             snapshot.tool_count = 0
             snapshot.error_message = _safe_error(exc)
             snapshot.discovered_at = int(time.time() * 1000)
+            delay = self._schedule_retry(server.name)
             logger.warning(
                 "mcp server discovery failed",
                 server_name=server.name,
                 error_type=type(exc).__name__,
+                retry_in_seconds=round(delay, 1),
             )
             return snapshot
 

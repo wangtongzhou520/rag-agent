@@ -31,6 +31,7 @@ from app.knowledge.schemas import (
     KnowledgeBaseVO,
     Page,
 )
+from app.knowledge.upload_limiter import UploadLimiter
 from app.model_runtime.embedding.service import EmbeddingService
 
 
@@ -43,6 +44,7 @@ class KnowledgeService:
         embedding: EmbeddingService,
         http: httpx.AsyncClient,
         upload_dir: Path,
+        upload_limiter: UploadLimiter | None = None,
     ) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._detector = detector
@@ -50,6 +52,7 @@ class KnowledgeService:
         self._embedding = embedding
         self._http = http
         self._upload_dir = upload_dir
+        self._upload_limiter = upload_limiter or UploadLimiter(max_concurrency=4)
 
     async def create_base(self, body: KnowledgeBaseCreate, user_id: int) -> str:
         name = body.name.strip()
@@ -153,6 +156,29 @@ class KnowledgeService:
             )
 
     async def create_document(
+        self,
+        kb_id: int,
+        user_id: int,
+        *,
+        filename: str | None,
+        data: bytes | None,
+        source_type: str,
+        source_location: str | None,
+        ingestion_spec: dict | None,
+    ) -> DocumentVO:
+        # 远程抓取、落盘与探测都要占资源，统一纳入上传并发保护；超额直接 429 降级
+        async with self._upload_limiter.slot():
+            return await self._create_document(
+                kb_id,
+                user_id,
+                filename=filename,
+                data=data,
+                source_type=source_type,
+                source_location=source_location,
+                ingestion_spec=ingestion_spec,
+            )
+
+    async def _create_document(
         self,
         kb_id: int,
         user_id: int,

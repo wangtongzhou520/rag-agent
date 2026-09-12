@@ -13,7 +13,7 @@
 - [x] `weather_query` 工具：确定性模拟天气，current/forecast 两种模式
 - [x] `sales_query` 工具：period 日期窗 + 确定性模拟数据、summary/ranking/detail/trend 四种查询
 - [x] `ticket_query` 工具：确定性模拟工单、summary/list/stats 三种查询
-- [ ] `youcom_search` 工具：You.com Search API 联网搜索，`YDC_API_KEY` 存在才注册（“工具存在 ⟺ 可用”）
+- [x] `youcom_search` 工具：You.com Search API 联网搜索，`YDC_API_KEY` 存在才注册（“工具存在 ⟺ 可用”），web/news 合并截断
 - [x] 服务端轻校验（必填缺失/枚举越界/数值钳制）+ `isError` 结果约定；预期业务失败抛 `fastmcp.exceptions.ToolError`，由协议包装为工具错误结果
 
 ### client（rag 侧）
@@ -22,7 +22,7 @@
 - [x] 每个远端工具按 `{serverName}:{toolName}` 注册一个 `McpClientToolExecutor` 进 `McpToolRegistry`；连接失败仅告警跳过，不阻断启动，管理 API 可手动重新发现
 - [x] 一期不提供本地 MCP executor，仅保留统一注册表接口
 - [x] 进程退出时关闭全部 MCP 会话
-- [ ] 后台指数退避自动重发现（当前由管理员显式触发重新发现）
+- [x] 后台指数退避自动重发现：离线 Server 按 `rag.mcp.rediscovery` 配置退避重试，成功即复位；管理员仍可显式刷新
 
 ### 意图驱动调用与提参
 

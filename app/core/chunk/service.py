@@ -62,33 +62,66 @@ def split_text(text: str, max_chars: int, overlap: int) -> list[str]:
 class ChunkingService:
     def chunk(self, blocks: Iterable[Block], budget: ChunkBudget) -> list[Chunk]:
         outline: list[str] = []
-        candidates: list[tuple[str, tuple[str, ...], dict]] = []
+        sections: list[tuple[tuple[str, ...], dict, list[str]]] = []
+        current: tuple[tuple[str, ...], dict, list[str]] | None = None
         for block in blocks:
             if isinstance(block, HeadingBlock):
                 level = min(6, max(1, block.level))
                 outline[level - 1 :] = [block.text.strip()]
+                current = None
                 continue
             text = render_block(block).strip()
             if not text:
                 continue
-            metadata = {
-                "source_file": block.provenance.source_file,
-                "sheet_name": block.provenance.sheet_name,
-            }
-            candidates.append((text, tuple(outline), metadata))
+            metadata = self._metadata(block)
+            path = tuple(outline)
+            # 同节同来源的相邻块才允许打包，避免跨章节/跨表把无关内容粘在一起
+            if current is None or current[0] != path or current[1] != metadata:
+                current = (path, metadata, [])
+                sections.append(current)
+            current[2].append(text)
 
         if budget.max_chars is None:
-            content = "\n\n".join(text for text, _, _ in candidates)
+            content = "\n\n".join(
+                text for _, _, texts in sections for text in texts
+            )
             if not content:
                 return []
-            path = candidates[0][1] if candidates else ()
-            return [self._make_chunk(content, 0, path, {})]
+            path = sections[0][0] if sections else ()
+            metadata = sections[0][1] if sections else {}
+            return [self._make_chunk(content, 0, path, metadata)]
 
         chunks: list[Chunk] = []
-        for text, path, metadata in candidates:
-            for part in split_text(text, budget.max_chars, budget.overlap_chars):
-                chunks.append(self._make_chunk(part, len(chunks), path, metadata))
+        for path, metadata, texts in sections:
+            buffer = ""
+            for text in texts:
+                if len(text) > budget.max_chars:
+                    if buffer:
+                        chunks.append(
+                            self._make_chunk(buffer, len(chunks), path, metadata)
+                        )
+                        buffer = ""
+                    for part in split_text(
+                        text, budget.max_chars, budget.overlap_chars
+                    ):
+                        chunks.append(
+                            self._make_chunk(part, len(chunks), path, metadata)
+                        )
+                    continue
+                if buffer and len(buffer) + 2 + len(text) > budget.max_chars:
+                    chunks.append(self._make_chunk(buffer, len(chunks), path, metadata))
+                    buffer = ""
+                buffer = f"{buffer}\n\n{text}" if buffer else text
+            if buffer:
+                chunks.append(self._make_chunk(buffer, len(chunks), path, metadata))
         return chunks
+
+    @staticmethod
+    def _metadata(block: Block) -> dict:
+        return {
+            "source_file": block.provenance.source_file,
+            "sheet_name": block.provenance.sheet_name,
+        }
 
     @staticmethod
     def _make_chunk(

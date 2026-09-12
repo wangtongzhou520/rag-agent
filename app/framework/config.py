@@ -264,6 +264,13 @@ class IdempotencySettings(BaseModel):
     consume_ttl_seconds: float = Field(default=3600, gt=0)
 
 
+class UploadSettings(BaseModel):
+    """上传并发保护：超出并发即按 429 降级，避免大文件解析把进程拖垮。"""
+
+    max_concurrency: int = Field(default=4, ge=1, le=64)
+    wait_timeout_seconds: float = Field(default=0.5, ge=0, le=30)
+
+
 class McpServerSettings(BaseModel):
     name: str
     url: str
@@ -272,9 +279,19 @@ class McpServerSettings(BaseModel):
     auth_token_env: str | None = None
 
 
+class McpRediscoverySettings(BaseModel):
+    """MCP Server 后台指数退避重发现；关闭后仅保留启动发现与管理员显式刷新。"""
+
+    enabled: bool = True
+    initial_delay_seconds: float = Field(default=30, gt=0)
+    max_delay_seconds: float = Field(default=600, gt=0)
+    multiplier: float = Field(default=2.0, gt=1)
+
+
 class McpSettings(BaseModel):
     global_max_concurrency: int = 32
     servers: list[McpServerSettings] = []
+    rediscovery: McpRediscoverySettings = McpRediscoverySettings()
 
 
 class RagSettings(BaseModel):
@@ -295,6 +312,7 @@ class RagSettings(BaseModel):
     rate_limit: RateLimitSettings = RateLimitSettings()
     task: TaskSettings = TaskSettings()
     idempotency: IdempotencySettings = IdempotencySettings()
+    upload: UploadSettings = UploadSettings()
     mcp: McpSettings = McpSettings()
 
 

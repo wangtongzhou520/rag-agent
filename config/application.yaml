@@ -158,8 +158,16 @@ rag:
     enabled: true
     submit_ttl_seconds: 330
     consume_ttl_seconds: 3600
+  upload:
+    max_concurrency: 4        # 超出并发直接 429 降级，避免大文件解析拖垮进程
+    wait_timeout_seconds: 0.5
   mcp:
     global_max_concurrency: 32
+    rediscovery:
+      enabled: true           # 离线 Server 后台指数退避重发现
+      initial_delay_seconds: 30
+      max_delay_seconds: 600
+      multiplier: 2.0
     servers:
       - name: internal
         url: http://127.0.0.1:9099

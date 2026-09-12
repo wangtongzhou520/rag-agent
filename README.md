@@ -69,12 +69,12 @@ Ragent AI 是面向 RAG 的知识检索与问答平台，覆盖文档上传与�
 
 | 能力 | 现状 |
 |---|---|
-| ES 关键词通道、LightRAG 图谱通道、联网搜索通道 | 配置为 `type: none`；当前只装配向量通道，融合权重已预留 |
+| ES 关键词通道、LightRAG 图谱通道 | 配置为 `type: none`；当前只装配向量通道，融合权重已预留（联网搜索已通过 MCP `youcom_search` 工具提供） |
 | MinerU 批量解析、图片/SVG + VLM 解析 | 未实现；上传这些格式会被解析器前置拦截 |
 | 七类 block-aware chunker、`ChunkPacker`、人工块重嵌入 | 当前是「标题大纲 + 滑窗切分」的简化分块路径 |
 | 远程定时刷新 | 仅预留 `schedule_cron` 等字段，没有 cron 扫描与执行器 |
 | Pipeline 线上接入（`processMode=pipeline`） | Pipeline 目前是编排与调试入口，线上文档仍走固定入库内核 |
-| MCP `youcom_search`、后台自动重发现、意图节点自定义 Prompt 模板 | 未实现；工具重发现目前由管理员显式触发 |
+| 意图节点自定义 `paramPromptTemplate` / `promptSnippet` | 未实现；MCP 提参仍使用内置模板 |
 
 ## 技术栈
 

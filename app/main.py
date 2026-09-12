@@ -49,6 +49,7 @@ from app.ingestion.engine.engine import IngestionEngine
 from app.ingestion.service import IngestionService, PipelineVectorWriter
 from app.knowledge.router import router as knowledge_router
 from app.knowledge.service import KnowledgeService
+from app.knowledge.upload_limiter import UploadLimiter
 from app.model_runtime.factory import build_model_runtime
 from app.rag.conversation import ConversationService
 from app.rag.eval.answer import EvalAnswerGenerator
@@ -162,6 +163,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     mcp_registry = McpToolRegistry()
     mcp_manager = McpClientManager(settings.rag.mcp, mcp_registry)
     await mcp_manager.discover_all()
+    await mcp_manager.start_rediscovery()
     mcp_admin_service = McpAdminService(engine, mcp_manager, mcp_registry)
     if settings.datasource.auto_ddl:
         await mcp_admin_service.apply_persisted_states()
@@ -329,6 +331,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         model_runtime.embedding,
         http_client,
         Path(settings.storage.local_dir),
+        UploadLimiter(
+            settings.rag.upload.max_concurrency,
+            settings.rag.upload.wait_timeout_seconds,
+        ),
     )
     pipeline_writer = PipelineVectorWriter(engine)
     app.state.ingestion_service = IngestionService(
@@ -360,6 +366,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if chat_limiter is not None:
             await chat_limiter.close()
         await stream_task_manager.close()
+        await mcp_manager.stop_rediscovery()
         await mcp_manager.close()
         await engine.dispose()
         await redis_client.aclose()

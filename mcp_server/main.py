@@ -8,12 +8,13 @@ import os
 
 from fastmcp import FastMCP
 
-from mcp_server.tools import sales, ticket, weather
+from mcp_server.tools import sales, ticket, weather, youcom
 
 mcp = FastMCP("ragent-mcp-server", version="0.0.1")
 weather.register(mcp)
 sales.register(mcp)
 ticket.register(mcp)
+youcom.register(mcp)  # 仅当 YDC_API_KEY 存在时注册
 
 
 def main() -> None:
