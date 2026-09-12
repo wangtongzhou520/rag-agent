@@ -1,7 +1,8 @@
 # RAG 质量回归数据集
 
-`datasets/rag_quality.v2.jsonl` 是当前默认的版本化黄金问题集，共 30 题；
-`v1` 保留最初 6 题基线。每行一个 JSON 对象：
+`datasets/rag_quality.v3.jsonl` 是当前默认的版本化黄金问题集，共 42 题；其中新增 12 题覆盖跨文档、
+三文档、精确边界、否定条件和相似数字消歧。`v1` 保留最初 6 题，`v2` 保留 30 题基线。
+每行一个 JSON 对象：
 
 - `id`：跨版本稳定的用例标识；
 - `question`：送入 `/rag/eval` 的原始问题；
@@ -20,6 +21,7 @@ uv run python -m scripts.evaluate_rag --with-answers
 uv run python -m scripts.evaluate_rag --with-answers --publish-report --label "release-candidate"
 uv run python -m scripts.evaluate_rag --judge-answers --publish-report --label "semantic-check"
 uv run python -m scripts.evaluate_rag --judge-answers --limit 3 --label "semantic-smoke"
+uv run python -m scripts.evaluate_rag --tag hard --with-answers --label "hard-cases"
 ```
 
 默认门槛为文档 Hit Rate ≥ 0.8、MRR ≥ 0.7、Context Precision ≥ 0.75、Latency P95 ≤ 5000ms，
@@ -53,7 +55,8 @@ Semantic Score/Pass Rate，不影响质量门禁；只有同时传入 `--min-sem
 参考答案定义最低事实要求，不作为答案内容上限；召回上下文支持、且不与参考答案矛盾的补充信息
 不应扣分。裁判仅对无依据、矛盾、误导或明显偏题的补充内容降分。
 需要先验证模型输出契约或控制试跑费用时，可用 `--limit N` 只执行数据集前 N 题；正式基线不得带
-该参数。
+该参数。`--tag <tag>` 只执行包含指定标签的用例；可重复传入，且用例必须同时包含全部指定标签。
+筛选先于 `--limit`，因此可用 `--tag hard --limit 3` 对困难集做低成本烟雾检查。
 
 ## 本地基线与优化结果
 
@@ -74,3 +77,10 @@ Semantic Score/Pass Rate，不影响质量门禁；只有同时传入 `--min-sem
 Answer Complete Rate = `1.0`、Answer Latency P95 = `2263ms`；检索指标继续为
 Hit/Recall/MRR = `1.0`、Context Precision = `0.9556`、Retrieval P95 = `3144ms`，
 30/30 无错误通过全部门槛。
+
+2026-09-12 扩展到 v3 的 42 题。新增 12 题统一标记 `hard`，其中 7 题要求同时召回两到三个文档，
+3 题验证“正好等于门槛”时不应误用“超过”规则，其余覆盖时间线归纳、额度对比和相似数字消歧。
+批量器同时增加 `--tag` 过滤，便于单独回归困难集。真实运行 `--tag hard --judge-answers`
+得到 Hit Rate、Doc Recall、MRR、Answer Keyword Recall、Answer Complete Rate、Semantic Score 和
+Semantic Pass Rate 均为 `1.0`，Context Precision 为 `0.9722`，Retrieval P95 为 `3464ms`，
+Answer P95 为 `4587ms`，12/12 无错误。报告 `hard-semantic-12` 已写入管理端评测账本。

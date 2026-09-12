@@ -12,19 +12,50 @@ from scripts.evaluate_rag import (
     load_dataset,
     run_case,
     score_case,
+    select_cases,
     summarize,
     thresholds_pass,
 )
 
 
 def test_repository_dataset_is_versioned_and_loadable() -> None:
-    cases = load_dataset(Path("evals/datasets/rag_quality.v2.jsonl"))
+    cases = load_dataset(Path("evals/datasets/rag_quality.v3.jsonl"))
 
-    assert len(cases) == 30
+    assert len(cases) == 42
     assert len({case.id for case in cases}) == len(cases)
     assert all(case.reference_doc_ids for case in cases)
     assert all(case.reference_answer for case in cases)
     assert all(case.expected_keywords for case in cases)
+    assert len([case for case in cases if "hard" in case.tags]) == 12
+
+
+def test_select_cases_filters_by_all_tags_before_limit() -> None:
+    cases = [
+        EvalCase(id="one", question="Q1", referenceDocIds=["doc"], tags=["hard"]),
+        EvalCase(
+            id="two",
+            question="Q2",
+            referenceDocIds=["doc"],
+            tags=["hard", "cross-doc"],
+        ),
+        EvalCase(
+            id="three",
+            question="Q3",
+            referenceDocIds=["doc"],
+            tags=["hard", "cross-doc"],
+        ),
+    ]
+
+    selected = select_cases(cases, ["hard", "cross-doc"], 1)
+
+    assert [case.id for case in selected] == ["two"]
+
+
+def test_select_cases_rejects_empty_result() -> None:
+    cases = [EvalCase(id="one", question="Q", referenceDocIds=["doc"])]
+
+    with pytest.raises(ValueError, match="no evaluation cases"):
+        select_cases(cases, ["missing"], None)
 
 
 def test_duplicate_dataset_ids_are_rejected(tmp_path: Path) -> None:

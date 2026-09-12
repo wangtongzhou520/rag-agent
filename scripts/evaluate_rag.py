@@ -76,6 +76,21 @@ def load_dataset(path: Path) -> list[EvalCase]:
     return cases
 
 
+def select_cases(
+    cases: list[EvalCase], tags: list[str], limit: int | None
+) -> list[EvalCase]:
+    """按全部指定标签筛选，再应用烟雾测试条数限制。"""
+    selected = cases
+    if tags:
+        required = set(tags)
+        selected = [case for case in selected if required.issubset(case.tags)]
+    if limit is not None:
+        selected = selected[:limit]
+    if not selected:
+        raise ValueError("no evaluation cases match the requested filters")
+    return selected
+
+
 def score_case(case: EvalCase, response: dict[str, Any]) -> CaseResult:
     retrieved = [str(value) for value in response.get("retrievedDocIds") or []]
     context_docs = response.get("retrievedContextDocIds") or []
@@ -352,9 +367,7 @@ async def run_case(
 
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
-    cases = load_dataset(args.dataset)
-    if args.limit is not None:
-        cases = cases[: args.limit]
+    cases = select_cases(load_dataset(args.dataset), args.tag, args.limit)
     headers = {}
     token = os.getenv(args.token_env, "").strip()
     if token:
@@ -433,7 +446,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--dataset", type=Path, default=Path("evals/datasets/rag_quality.v2.jsonl")
+        "--dataset", type=Path, default=Path("evals/datasets/rag_quality.v3.jsonl")
     )
     parser.add_argument(
         "--base-url", default="http://127.0.0.1:9090/api/ragent"
@@ -450,6 +463,12 @@ def parse_args() -> argparse.Namespace:
         "--limit",
         type=int,
         help="run only the first N cases for smoke testing",
+    )
+    parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        help="run cases containing this tag; repeat to require all tags",
     )
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument(
