@@ -27,6 +27,7 @@ frontend/*.tsbuildinfo
 .env
 .env.*
 !.env.example
+!.env.docker.example
 
 # Runtime uploads (PDF, DOCX, images, etc.)
 resources/uploads/

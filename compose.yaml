@@ -1,0 +1,145 @@
+x-backend-environment: &backend-environment
+  RAGENT_DATASOURCE__HOST: postgres
+  RAGENT_DATASOURCE__PORT: 5432
+  RAGENT_DATASOURCE__DATABASE: ${POSTGRES_DB:-ragagent}
+  RAGENT_DATASOURCE__USERNAME: ${POSTGRES_USER:-postgres}
+  RAGENT_DATASOURCE__PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+  RAGENT_REDIS__HOST: redis
+  RAGENT_REDIS__PORT: 6379
+  RAGENT_REDIS__DATABASE: 0
+  RAGENT_REDIS__PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+  RAGENT_AUTH__ENABLED: ${RAGENT_AUTH_ENABLED:-false}
+  RAGENT_AUTH__JWT_SECRET: ${JWT_SECRET:-}
+  RAGENT_STORAGE__LOCAL_DIR: /app/resources/uploads
+  RAGENT_EVAL__ENABLED: ${RAGENT_EVAL_ENABLED:-false}
+  RAGENT_AI__PROVIDERS__BAILIAN__API_KEY: ${BAILIAN_API_KEY:-}
+  RAGENT_RAG__MCP__SERVERS: >-
+    [{"name":"internal","url":"http://mcp:9099","timeout_seconds":15,"max_concurrency":8}]
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ragagent}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    # 仅绑定回环 + 非默认宿主端口，避免与本机已有的 5432 实例冲突；
+    # 应用容器之间始终通过服务名 postgres:5432 通信。
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    # 同上：默认映射到 16379，避免与本机已有的 6379 实例冲突。
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mcp:
+    image: ragent-backend:${RAGENT_IMAGE_TAG:-local}
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    init: true
+    command: ["python", "-m", "mcp_server.main"]
+    environment:
+      MCP_SERVER_HOST: 0.0.0.0
+      MCP_SERVER_PORT: 9099
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; socket.create_connection(('127.0.0.1', 9099), 2).close()",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    image: ragent-backend:${RAGENT_IMAGE_TAG:-local}
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    init: true
+    environment: *backend-environment
+    ports:
+      - "${API_PORT:-9090}:9090"
+    volumes:
+      - uploads:/app/resources/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9090/health', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 20
+
+  worker:
+    image: ragent-backend:${RAGENT_IMAGE_TAG:-local}
+    restart: unless-stopped
+    init: true
+    command: ["python", "-m", "app.worker"]
+    environment: *backend-environment
+    volumes:
+      - uploads:/app/resources/uploads
+    depends_on:
+      api:
+        condition: service_healthy
+
+  frontend:
+    image: ragent-frontend:${RAGENT_IMAGE_TAG:-local}
+    build:
+      context: frontend
+      target: runtime
+      args:
+        VITE_API_BASE_URL: /api/ragent
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres-data:
+  redis-data:
+  uploads:

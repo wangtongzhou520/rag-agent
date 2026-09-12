@@ -48,6 +48,7 @@ M5 质量闭环同时提供条件启用的纯检索评测接口、版本化黄�
 | [07-系统管理与可观测](docs/07-系统管理与可观测.md) | 认证授权、审计、RAG Trace、Dashboard、agents 人设与 Prompt 槽位 |
 | [08-前端工程与页面设计](docs/08-前端工程与页面设计.md) | React 工程、蓝色视觉体系、页面规划、REST/SSE 联调、测试与分期 |
 | [09-CI质量门禁](docs/09-CI质量门禁.md) | Linux/Apple Silicon 后端、Docker 集成、前端 E2E 与真实 RAG 评测门禁 |
+| [10-容器化部署](docs/10-容器化部署.md) | 全栈镜像构建、compose 编排、配置项、首个管理员、备份升级与安全基线 |
 
 ## 开发命令
 
@@ -59,6 +60,19 @@ uv run python -m mcp_server.main               # 启动 MCP 工具服务（:9099
 uv run pytest -q                               # 测试
 uv run ruff check .                            # Lint
 ```
+
+Docker 一键拉起完整栈（PostgreSQL/pgvector + Redis + MCP + API + Worker + 前端 Nginx）：
+
+```bash
+cp .env.docker.example .env.docker             # 修改两个必填密码
+docker compose --env-file .env.docker up -d --build
+curl -s http://127.0.0.1:9090/health           # API 健康检查
+# 浏览器访问 http://127.0.0.1:5173/
+```
+
+宿主端口默认避开本机已占用的 5432/6379（PG 映射到 15432、Redis 映射到 16379），
+`mcp:9099` 不映射宿主。首个管理员创建、认证启用、备份与回滚步骤见
+`docs/10-容器化部署.md`。
 
 前端开发与质量检查：
 
@@ -83,4 +97,4 @@ uv run python -m scripts.evaluate_rag             # 需先导入 evals/corpus �
 
 按 `00` 文档第 9 节路线图推进：M1 骨架 + 问答主链路 → M2 入库链路 → M3 混合检索增强 → M4 可编排入库 + MCP + 管理面 → M5 韧性与生产化。
 
-当前进度：M1/M2 核心链路已落地并提供隔离的 Docker 集成验收。M3 核心链路已完成，包括查询词映射与模型改写、意图树及批量管理、FAST 档歧义复核、SYSTEM/MCP 分流、多库范围路由与补充路配额、pgvector HNSW 检索、超时降级、去重、加权 RRF、百炼 `qwen3-rerank`、元数据批量回表、来源引用以及 RAG Trace。当前实际检索通道为 pgvector；ES、LightRAG、WebSearch 仍为按需启用的可选增强项。
+当前进度：M1/M2 核心链路已落地并提供隔离的 Docker 集成验收。M3 核心链路已完成，包括查询词映射与模型改写、意图树及批量管理、FAST 档歧义复核、SYSTEM/MCP 分流、多库范围路由与补充路配额、pgvector HNSW 检索、超时降级、去重、加权 RRF、百炼 `qwen3-rerank`、元数据批量回表、来源引用以及 RAG Trace。M5 的生产化交付补齐了全栈容器编排：单镜像三种进程角色（API/Worker/MCP）、前端 Nginx 托管与反代、健康检查串联启动顺序、命名卷持久化，以及 CI 中的 compose 校验与镜像构建门禁。当前实际检索通道为 pgvector；ES、LightRAG、WebSearch 仍为按需启用的可选增强项。
