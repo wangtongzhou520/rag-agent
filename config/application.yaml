@@ -29,6 +29,12 @@ auth:
 storage:
   local_dir: resources/uploads
 
+# 产品身份：所有面向用户回答前置的身份基线；disclose_model=true 时允许披露底层模型与供应商
+agent:
+  name: Ragent 知识助手
+  description: 面向企业知识检索与问答的产品助手
+  disclose_model: false
+
 ai:
   # provider 连接配置；api_key 留空，用环境变量覆盖，例如：
   #   RAGENT_AI__PROVIDERS__BAILIAN__API_KEY=sk-...

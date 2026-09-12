@@ -306,6 +306,15 @@ class EvalSettings(BaseModel):
     enabled: bool = False
 
 
+class AgentIdentitySettings(BaseModel):
+    """产品身份：助手自称与定位，作为所有面向用户回答的身份基线。"""
+
+    name: str = "Ragent 知识助手"
+    description: str = "面向企业知识检索与问答的产品助手"
+    # 置 true 时允许模型在被问及底层实现时给出真实模型与供应商信息
+    disclose_model: bool = False
+
+
 class Settings(BaseSettings):
     """全局配置根模型。优先级：环境变量(RAGENT_*) > application.yaml > 字段默认值。"""
 
@@ -323,6 +332,7 @@ class Settings(BaseSettings):
     ai: AiSettings = AiSettings()
     rag: RagSettings = RagSettings()
     eval: EvalSettings = EvalSettings()
+    agent: AgentIdentitySettings = AgentIdentitySettings()
     logging: LoggingSettings = LoggingSettings()
 
     @classmethod

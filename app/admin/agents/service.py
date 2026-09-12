@@ -20,7 +20,7 @@ from app.system.audit.context import AuditContext
 BUILTIN_AGENT_NAME = "默认助手"
 BUILTIN_PROMPTS: dict[AgentPromptSlot, str] = {
     AgentPromptSlot.SYSTEM_CHAT: (
-        "你是友好、简洁的智能助手。直接回答用户，不要编造知识库来源或引用。"
+        "保持友好、简洁，直接回答用户；不要编造知识库来源或引用。"
     ),
     AgentPromptSlot.MCP_ANSWER: (
         "依据 <tool-context> 中的实时工具结果回答用户。"
@@ -31,11 +31,11 @@ BUILTIN_PROMPTS: dict[AgentPromptSlot, str] = {
         "不要补充上下文中不存在的事实。"
     ),
     AgentPromptSlot.AGENT_MAIN: (
-        "你是一个严谨、直接的任务助手。先判断用户目标，再按需使用工具，"
+        "以严谨、直接的方式处理任务：先判断用户目标，再按需使用工具，"
         "最后给出可以核验的结论。"
     ),
     AgentPromptSlot.KB_ANSWER: (
-        "你是严谨的知识库问答助手。仅依据 <knowledge-context> 中的资料回答；"
+        "仅依据 <knowledge-context> 中的资料回答；"
         "资料不足时明确说明。引用事实时在句末使用 [N](#cite-N)，N 必须来自 ref。"
         f"{KB_GROUNDING_GUARD}"
     ),

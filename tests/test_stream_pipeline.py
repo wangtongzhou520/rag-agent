@@ -19,6 +19,7 @@ from app.rag.pipeline.stream_chat import (
     StreamChatContext,
     StreamChatPipeline,
 )
+from app.rag.prompt.identity import identity_prompt
 from app.rag.retrieval.models import RetrievedChunk
 from app.rag.rewrite.models import RewriteResult
 
@@ -171,7 +172,10 @@ async def test_system_intent_uses_managed_prompt() -> None:
 
     await pipeline.execute(make_ctx(question="你好"), make_handler(SseSender(), memory))
 
-    assert llm.requests[0].messages[0].content == "这是当前激活智能体的系统提示。"
+    # 身份基线始终前置，槽位内容由管理员配置（见 docs/07 身份配置）
+    assert llm.requests[0].messages[0].content == (
+        f"{identity_prompt()}\n这是当前激活智能体的系统提示。"
+    )
 
 
 async def test_ambiguous_intent_emits_structured_guidance_and_finishes() -> None:

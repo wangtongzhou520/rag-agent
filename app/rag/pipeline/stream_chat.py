@@ -21,6 +21,7 @@ from app.rag.mcp.service import McpEvidence, McpIntentDispatcher
 from app.rag.memory.service import ConversationMemoryService
 from app.rag.pipeline.event_handler import StreamEventCallback
 from app.rag.prompt.grounding import KB_GROUNDING_GUARD
+from app.rag.prompt.identity import with_identity
 from app.rag.prompt.resolver import AgentPromptResolver
 from app.rag.prompt.slots import AgentPromptSlot
 from app.rag.retrieval.models import RetrievalScope, RetrievedChunk
@@ -214,12 +215,14 @@ class StreamChatPipeline:
         context = CitationContextEnricher().enrich(raw_context, assembled.indexes)
         prompt = await self._resolve_prompt(
             AgentPromptSlot.KB_ANSWER,
-            "你是严谨的知识库问答助手。仅依据 <knowledge-context> 中的资料回答；"
+            "仅依据 <knowledge-context> 中的资料回答；"
             "资料不足时明确说明。引用事实时在句末使用 [N](#cite-N)，N 必须来自 ref。"
         )
         system = (
-            f"{prompt}\n{KB_GROUNDING_GUARD}\n"
-            f"<knowledge-context>\n{context}\n</knowledge-context>"
+            with_identity(
+                f"{prompt}\n{KB_GROUNDING_GUARD}\n"
+                f"<knowledge-context>\n{context}\n</knowledge-context>"
+            )
         )
         messages = [
             ChatMessage(role=ChatRole.SYSTEM, content=system),
@@ -232,9 +235,11 @@ class StreamChatPipeline:
     async def _stream_system_response(
         self, ctx: StreamChatContext, callback: StreamEventCallback
     ) -> None:
-        system = await self._resolve_prompt(
-            AgentPromptSlot.SYSTEM_CHAT,
-            "你是友好、简洁的智能助手。直接回答用户，不要编造知识库来源或引用。",
+        system = with_identity(
+            await self._resolve_prompt(
+                AgentPromptSlot.SYSTEM_CHAT,
+                "保持友好、简洁，直接回答用户；不要编造知识库来源或引用。",
+            )
         )
         messages = [
             ChatMessage(role=ChatRole.SYSTEM, content=system),
@@ -265,7 +270,9 @@ class StreamChatPipeline:
         messages = [
             ChatMessage(
                 role=ChatRole.SYSTEM,
-                content=f"{prompt}\n<tool-context>\n{context}\n</tool-context>",
+                content=with_identity(
+                    f"{prompt}\n<tool-context>\n{context}\n</tool-context>"
+                ),
             ),
             *ctx.history,
             ChatMessage(role=ChatRole.USER, content=ctx.question),
