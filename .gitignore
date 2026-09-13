@@ -39,3 +39,6 @@ resources/uploads/
 # OS
 .DS_Store
 Thumbs.db
+
+# CI 工作流暂不纳入版本控制（远端未启用 GitHub Actions，门禁在本地执行）
+.github/workflows/
